@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fullexpi/piguard/pkg/models"
+	"github.com/Fullex26/piguard/pkg/models"
 )
 
 // Deduplicator prevents alert spam by tracking recent alerts

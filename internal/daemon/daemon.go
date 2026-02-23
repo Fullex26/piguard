@@ -10,13 +10,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/fullexpi/piguard/internal/analysers"
-	"github.com/fullexpi/piguard/internal/config"
-	"github.com/fullexpi/piguard/internal/eventbus"
-	"github.com/fullexpi/piguard/internal/notifiers"
-	"github.com/fullexpi/piguard/internal/store"
-	"github.com/fullexpi/piguard/internal/watchers"
-	"github.com/fullexpi/piguard/pkg/models"
+	"github.com/Fullex26/piguard/internal/analysers"
+	"github.com/Fullex26/piguard/internal/config"
+	"github.com/Fullex26/piguard/internal/eventbus"
+	"github.com/Fullex26/piguard/internal/notifiers"
+	"github.com/Fullex26/piguard/internal/store"
+	"github.com/Fullex26/piguard/internal/watchers"
+	"github.com/Fullex26/piguard/pkg/models"
 )
 
 const Version = "0.1.0"

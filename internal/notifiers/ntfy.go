@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/fullexpi/piguard/internal/config"
-	"github.com/fullexpi/piguard/pkg/models"
+	"github.com/Fullex26/piguard/internal/config"
+	"github.com/Fullex26/piguard/pkg/models"
 )
 
 // Ntfy sends notifications via ntfy.sh

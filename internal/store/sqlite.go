@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/fullexpi/piguard/pkg/models"
+	"github.com/Fullex26/piguard/pkg/models"
 	_ "modernc.org/sqlite"
 )
 

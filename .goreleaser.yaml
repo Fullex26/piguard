@@ -14,7 +14,7 @@ builds:
     goarm:
       - "7"
     ldflags:
-      - -s -w -X github.com/fullexpi/piguard/internal/daemon.Version={{.Version}}
+      - -s -w -X github.com/Fullex26/piguard/internal/daemon.Version={{.Version}}
 
 archives:
   - format: binary

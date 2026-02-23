@@ -3,7 +3,7 @@ package eventbus
 import (
 	"sync"
 
-	"github.com/fullexpi/piguard/pkg/models"
+	"github.com/Fullex26/piguard/pkg/models"
 )
 
 // Handler is a function that receives events

@@ -18,7 +18,7 @@ PiGuard watches your Pi in real-time and alerts you the moment something changes
 
 ```bash
 # Install
-curl -sSL https://raw.githubusercontent.com/fullexpi/piguard/main/scripts/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/Fullex26/piguard/main/scripts/install.sh | sudo bash
 
 # Configure (set your Telegram bot token)
 sudo nano /etc/piguard/config.yaml
@@ -41,7 +41,7 @@ sudo systemctl enable --now piguard
 
 **New port detected:**
 ```
-🟡 PiGuard — fullexpi
+🟡 PiGuard — Raspberrypi
 
 New listening port: 0.0.0.0:5432 → docker-proxy (container: postgres)
 Bound to all interfaces — accessible from network
@@ -51,7 +51,7 @@ Bound to all interfaces — accessible from network
 
 **Firewall drift:**
 ```
-🔴 PiGuard — fullexpi
+🔴 PiGuard — raspberrypi
 
 Firewall policy changed: INPUT is ACCEPT (expected DROP)
 
@@ -79,7 +79,7 @@ See [configs/default.yaml](configs/default.yaml) for all options.
 Requires Go 1.22+.
 
 ```bash
-git clone https://github.com/fullexpi/piguard.git
+git clone https://github.com/Fullex26/piguard.git
 cd piguard
 
 # Build for current platform

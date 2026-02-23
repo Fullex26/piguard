@@ -7,9 +7,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/fullexpi/piguard/internal/config"
-	"github.com/fullexpi/piguard/internal/daemon"
-	"github.com/fullexpi/piguard/internal/store"
+	"github.com/Fullex26/piguard/internal/config"
+	"github.com/Fullex26/piguard/internal/daemon"
+	"github.com/Fullex26/piguard/internal/setup"
+	"github.com/Fullex26/piguard/internal/store"
 )
 
 var cfgPath string
@@ -131,18 +132,16 @@ func testCmd() *cobra.Command {
 }
 
 func setupCmd() *cobra.Command {
-	return &cobra.Command{
+	var envPath string
+	cmd := &cobra.Command{
 		Use:   "setup",
 		Short: "Interactive setup wizard",
-		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("🛡️  PiGuard Setup")
-			fmt.Println()
-			fmt.Println("  Interactive setup coming in v0.2")
-			fmt.Printf("  For now, edit: sudo nano %s\n", config.DefaultConfigPath)
-			fmt.Println("  Then run:     sudo piguard run")
-			fmt.Println("  Or test:      sudo piguard test")
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return setup.Run(cfgPath, envPath)
 		},
 	}
+	cmd.Flags().StringVar(&envPath, "env-file", setup.DefaultEnvPath, "path to env file for credentials")
+	return cmd
 }
 
 func versionCmd() *cobra.Command {
@@ -150,7 +149,7 @@ func versionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print version",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("PiGuard v%s\nhttps://github.com/fullexpi/piguard\n", daemon.Version)
+			fmt.Printf("PiGuard v%s\nhttps://github.com/Fullex26/piguard\n", daemon.Version)
 		},
 	}
 }

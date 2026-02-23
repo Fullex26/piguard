@@ -6,8 +6,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/fullexpi/piguard/internal/config"
-	"github.com/fullexpi/piguard/pkg/models"
+	"github.com/Fullex26/piguard/internal/config"
+	"github.com/Fullex26/piguard/pkg/models"
 )
 
 const telegramAPI = "https://api.telegram.org/bot%s/sendMessage"

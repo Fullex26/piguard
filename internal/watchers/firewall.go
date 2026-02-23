@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fullexpi/piguard/internal/config"
-	"github.com/fullexpi/piguard/internal/eventbus"
-	"github.com/fullexpi/piguard/pkg/models"
+	"github.com/Fullex26/piguard/internal/config"
+	"github.com/Fullex26/piguard/internal/eventbus"
+	"github.com/Fullex26/piguard/pkg/models"
 )
 
 // FirewallWatcher monitors iptables chains for unexpected changes

@@ -14,10 +14,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fullexpi/piguard/internal/analysers"
-	"github.com/fullexpi/piguard/internal/config"
-	"github.com/fullexpi/piguard/internal/eventbus"
-	"github.com/fullexpi/piguard/internal/store"
+	"github.com/Fullex26/piguard/internal/analysers"
+	"github.com/Fullex26/piguard/internal/config"
+	"github.com/Fullex26/piguard/internal/eventbus"
+	"github.com/Fullex26/piguard/internal/store"
 )
 
 const telegramPollInterval = 2 * time.Second

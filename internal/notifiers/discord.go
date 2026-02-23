@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/fullexpi/piguard/internal/config"
-	"github.com/fullexpi/piguard/pkg/models"
+	"github.com/Fullex26/piguard/internal/config"
+	"github.com/Fullex26/piguard/pkg/models"
 )
 
 // Discord sends notifications via Discord webhooks

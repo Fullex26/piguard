@@ -1,6 +1,6 @@
 package notifiers
 
-import "github.com/fullexpi/piguard/pkg/models"
+import "github.com/Fullex26/piguard/pkg/models"
 
 // Notifier sends alerts to external channels
 type Notifier interface {

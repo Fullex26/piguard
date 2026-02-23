@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-REPO="fullexpi/piguard"
+REPO="Fullex26/piguard"
 INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/piguard"
 STATE_DIR="/var/lib/piguard"
@@ -88,10 +88,12 @@ mkdir -p "$CONFIG_DIR" "$STATE_DIR" "$LOG_DIR"
 chmod 750 "$CONFIG_DIR" "$STATE_DIR"
 
 # Install default config if not exists
+FRESH_INSTALL=false
 if [[ ! -f "$CONFIG_DIR/config.yaml" ]]; then
     curl -sL "https://raw.githubusercontent.com/$REPO/$LATEST/configs/default.yaml" \
         -o "$CONFIG_DIR/config.yaml"
     echo -e "  Config: ${GREEN}$CONFIG_DIR/config.yaml${NC} (default)"
+    FRESH_INSTALL=true
 else
     echo -e "  Config: ${YELLOW}$CONFIG_DIR/config.yaml${NC} (existing, kept)"
 fi
@@ -104,16 +106,16 @@ systemctl daemon-reload
 echo ""
 echo -e "${GREEN}✅ PiGuard $LATEST installed!${NC}"
 echo ""
-echo "  Next steps:"
-echo "  1. Configure notifications:"
-echo "     sudo nano $CONFIG_DIR/config.yaml"
-echo ""
-echo "  2. Test notifications:"
-echo "     sudo piguard test"
-echo ""
-echo "  3. Start PiGuard:"
-echo "     sudo systemctl enable --now piguard"
-echo ""
-echo "  4. Check status:"
-echo "     sudo piguard status"
-echo ""
+
+if [[ "$FRESH_INSTALL" == "true" ]]; then
+    echo "  Launching setup wizard..."
+    echo ""
+    "$INSTALL_DIR/piguard" --config "$CONFIG_DIR/config.yaml" setup
+else
+    echo "  Upgrade complete. Your existing config was kept."
+    echo ""
+    echo "  To reconfigure: sudo piguard setup"
+    echo "  To restart:     sudo systemctl restart piguard"
+    echo "  To check:       sudo piguard status"
+    echo ""
+fi

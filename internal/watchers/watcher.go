@@ -3,8 +3,8 @@ package watchers
 import (
 	"context"
 
-	"github.com/fullexpi/piguard/internal/config"
-	"github.com/fullexpi/piguard/internal/eventbus"
+	"github.com/Fullex26/piguard/internal/config"
+	"github.com/Fullex26/piguard/internal/eventbus"
 )
 
 // Watcher is the interface all security watchers implement

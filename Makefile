@@ -1,7 +1,7 @@
 BINARY := piguard
 VERSION := 0.1.0
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "dev")
-LDFLAGS := -ldflags "-s -w -X github.com/fullexpi/piguard/internal/daemon.Version=$(VERSION)-$(COMMIT)"
+LDFLAGS := -ldflags "-s -w -X github.com/Fullex26/piguard/internal/daemon.Version=$(VERSION)-$(COMMIT)"
 
 .PHONY: build build-pi build-all test clean install
 
