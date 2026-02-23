@@ -1,0 +1,206 @@
+package config
+
+import (
+	"fmt"
+	"os"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
+
+const DefaultConfigPath = "/etc/piguard/config.yaml"
+
+type Config struct {
+	Notifications NotificationConfig `yaml:"notifications"`
+	Ports         PortConfig         `yaml:"ports"`
+	Firewall      FirewallConfig     `yaml:"firewall"`
+	System        SystemConfig       `yaml:"system"`
+	Alerts        AlertConfig        `yaml:"alerts"`
+	Baseline      BaselineConfig     `yaml:"baseline"`
+	Docker        DockerConfig       `yaml:"docker"`
+}
+
+type NotificationConfig struct {
+	Telegram TelegramConfig `yaml:"telegram"`
+	Ntfy     NtfyConfig     `yaml:"ntfy"`
+	Discord  DiscordConfig  `yaml:"discord"`
+	Webhook  WebhookConfig  `yaml:"webhook"`
+}
+
+type TelegramConfig struct {
+	Enabled     bool   `yaml:"enabled"`
+	BotToken    string `yaml:"bot_token"`
+	ChatID      string `yaml:"chat_id"`
+	Interactive bool   `yaml:"interactive"` // Enable two-way command handling
+}
+
+type NtfyConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	Topic    string `yaml:"topic"`
+	Server   string `yaml:"server"`
+	Token    string `yaml:"token"`
+}
+
+type DiscordConfig struct {
+	Enabled    bool   `yaml:"enabled"`
+	WebhookURL string `yaml:"webhook_url"`
+}
+
+type WebhookConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	URL     string `yaml:"url"`
+	Method  string `yaml:"method"`
+}
+
+type PortConfig struct {
+	Enabled  bool        `yaml:"enabled"`
+	Ignore   []string    `yaml:"ignore"`
+	Known    []KnownPort `yaml:"known"`
+	Cooldown string      `yaml:"cooldown"`
+}
+
+type KnownPort struct {
+	Addr  string `yaml:"addr"`
+	Label string `yaml:"label"`
+	Risk  string `yaml:"risk"`
+}
+
+type FirewallConfig struct {
+	Enabled       bool           `yaml:"enabled"`
+	Chains        []ChainConfig  `yaml:"chains"`
+	CheckInterval string         `yaml:"check_interval"`
+}
+
+type ChainConfig struct {
+	Table        string `yaml:"table"`
+	Chain        string `yaml:"chain"`
+	ExpectPolicy string `yaml:"expect_policy"`
+	ExpectRule   string `yaml:"expect_rule"`
+}
+
+type SystemConfig struct {
+	DiskThreshold   int `yaml:"disk_threshold"`
+	MemoryThreshold int `yaml:"memory_threshold"`
+	TempThreshold   int `yaml:"temperature_threshold"`
+}
+
+type AlertConfig struct {
+	MinSeverity  string     `yaml:"min_severity"`
+	DailySummary string     `yaml:"daily_summary"`
+	QuietHours   QuietHours `yaml:"quiet_hours"`
+}
+
+type QuietHours struct {
+	Start string `yaml:"start"`
+	End   string `yaml:"end"`
+}
+
+type BaselineConfig struct {
+	Mode             string `yaml:"mode"`
+	LearningDuration string `yaml:"learning_duration"`
+}
+
+type DockerConfig struct {
+	Enabled bool `yaml:"enabled"`
+}
+
+// Load reads and parses the config file, expanding env vars
+func Load(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading config: %w", err)
+	}
+
+	// Expand environment variables in config
+	expanded := os.ExpandEnv(string(data))
+
+	cfg := DefaultConfig()
+	if err := yaml.Unmarshal([]byte(expanded), cfg); err != nil {
+		return nil, fmt.Errorf("parsing config: %w", err)
+	}
+
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+
+	return cfg, nil
+}
+
+// DefaultConfig returns sane defaults
+func DefaultConfig() *Config {
+	return &Config{
+		Ports: PortConfig{
+			Enabled:  true,
+			Cooldown: "15m",
+			Ignore:   []string{"127.0.0.1:*", "::1:*"},
+		},
+		Firewall: FirewallConfig{
+			Enabled:       true,
+			CheckInterval: "60s",
+			Chains: []ChainConfig{
+				{Table: "filter", Chain: "INPUT", ExpectPolicy: "DROP"},
+				{Table: "filter", Chain: "DOCKER-USER", ExpectRule: "DROP.*0.0.0.0/0"},
+			},
+		},
+		System: SystemConfig{
+			DiskThreshold:   80,
+			MemoryThreshold: 90,
+			TempThreshold:   75,
+		},
+		Alerts: AlertConfig{
+			MinSeverity:  "warning",
+			DailySummary: "08:00",
+			QuietHours: QuietHours{
+				Start: "23:00",
+				End:   "07:00",
+			},
+		},
+		Baseline: BaselineConfig{
+			Mode:             "enforcing",
+			LearningDuration: "7d",
+		},
+		Docker: DockerConfig{
+			Enabled: true,
+		},
+	}
+}
+
+// Validate checks the config for errors
+func (c *Config) Validate() error {
+	hasNotifier := c.Notifications.Telegram.Enabled ||
+		c.Notifications.Ntfy.Enabled ||
+		c.Notifications.Discord.Enabled ||
+		c.Notifications.Webhook.Enabled
+
+	if !hasNotifier {
+		return fmt.Errorf("at least one notification channel must be enabled")
+	}
+
+	if c.Notifications.Telegram.Enabled {
+		if c.Notifications.Telegram.BotToken == "" {
+			return fmt.Errorf("telegram bot_token is required when telegram is enabled")
+		}
+		if c.Notifications.Telegram.ChatID == "" {
+			return fmt.Errorf("telegram chat_id is required when telegram is enabled")
+		}
+	}
+
+	if c.Notifications.Ntfy.Enabled && c.Notifications.Ntfy.Topic == "" {
+		return fmt.Errorf("ntfy topic is required when ntfy is enabled")
+	}
+
+	validSeverities := map[string]bool{"info": true, "warning": true, "critical": true}
+	if !validSeverities[strings.ToLower(c.Alerts.MinSeverity)] {
+		return fmt.Errorf("invalid min_severity: %s (must be info, warning, or critical)", c.Alerts.MinSeverity)
+	}
+
+	return nil
+}
+
+// HasNotifier returns whether at least one notifier is configured
+func (c *Config) HasNotifier() bool {
+	return c.Notifications.Telegram.Enabled ||
+		c.Notifications.Ntfy.Enabled ||
+		c.Notifications.Discord.Enabled ||
+		c.Notifications.Webhook.Enabled
+}

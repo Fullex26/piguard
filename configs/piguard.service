@@ -1,0 +1,19 @@
+[Unit]
+Description=PiGuard Security Monitor
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/piguard run
+Restart=on-failure
+RestartSec=10
+EnvironmentFile=-/etc/piguard/env
+
+# Security hardening
+NoNewPrivileges=false
+ProtectSystem=strict
+ReadWritePaths=/var/lib/piguard /var/log/piguard
+
+[Install]
+WantedBy=multi-user.target
