@@ -47,10 +47,40 @@ fi
 
 echo -e "  Version: ${YELLOW}$LATEST${NC}"
 
-# Download binary
+# Download binary and checksums to temp files
 DOWNLOAD_URL="https://github.com/$REPO/releases/download/$LATEST/piguard-$BINARY_ARCH"
+CHECKSUM_URL="https://github.com/$REPO/releases/download/$LATEST/checksums.txt"
+
+TMPBIN=$(mktemp)
+TMPSUM=$(mktemp)
+trap 'rm -f "$TMPBIN" "$TMPSUM"' EXIT
+
 echo "  Downloading..."
-curl -sL "$DOWNLOAD_URL" -o "$INSTALL_DIR/piguard"
+curl -sL "$DOWNLOAD_URL" -o "$TMPBIN"
+curl -sL "$CHECKSUM_URL" -o "$TMPSUM"
+
+# Verify checksum
+echo "  Verifying checksum..."
+EXPECTED=$(grep "piguard-$BINARY_ARCH$" "$TMPSUM" | awk '{print $1}')
+
+if [[ -z "$EXPECTED" ]]; then
+    echo -e "${RED}Error: Could not find checksum for piguard-$BINARY_ARCH in checksums.txt${NC}"
+    exit 1
+fi
+
+ACTUAL=$(sha256sum "$TMPBIN" | awk '{print $1}')
+
+if [[ "$EXPECTED" != "$ACTUAL" ]]; then
+    echo -e "${RED}Error: Checksum verification failed — binary may be compromised${NC}"
+    echo -e "${RED}  Expected: $EXPECTED${NC}"
+    echo -e "${RED}  Actual:   $ACTUAL${NC}"
+    exit 1
+fi
+
+echo -e "  ${GREEN}Checksum verified ✓${NC}"
+
+# Install verified binary
+mv "$TMPBIN" "$INSTALL_DIR/piguard"
 chmod 755 "$INSTALL_DIR/piguard"
 
 # Create directories

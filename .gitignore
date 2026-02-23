@@ -2,3 +2,7 @@ bin/
 dist/
 *.db
 *.log
+
+# Claude Code
+.claude/
+CLAUDE.md
