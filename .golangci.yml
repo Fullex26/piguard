@@ -1,7 +1,4 @@
-version: "2"
-
 linters:
-  default: standard
   enable:
     - gocritic      # style and correctness suggestions
     - misspell      # catch common English spelling mistakes in comments/strings

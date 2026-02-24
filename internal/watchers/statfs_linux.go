@@ -16,7 +16,7 @@ func statfsLinux(path string, stat *StatFS) error {
 	if err := syscall.Statfs(path, &s); err != nil {
 		return err
 	}
-	stat.Bsize = s.Bsize
+	stat.Bsize = int64(s.Bsize) // Bsize is int32 on ARMv7, int64 on arm64/amd64
 	stat.Blocks = s.Blocks
 	stat.Bfree = s.Bfree
 	return nil
