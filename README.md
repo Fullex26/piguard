@@ -35,7 +35,26 @@ sudo systemctl enable --now piguard
 - **Ports**: Detects new listening sockets in real-time with process + container labels
 - **Firewall**: Watches iptables chains for policy changes or missing rules
 - **System**: Disk, memory, CPU temperature (Pi thermal sensor)
+- **File integrity**: Detects changes to critical system files (`/etc/passwd`, SSH config, sudoers, crontab, etc.)
+- **Security tools**: Tails ClamAV and rkhunter logs — fires Critical alerts on malware detections or rootkit warnings
 - **Daily summary**: 8am digest with full system status
+
+## Works Best With
+
+PiGuard integrates with the following optional security tools. Install them on your Pi for deeper coverage — PiGuard becomes the single real-time alerting layer for all security signals.
+
+| Tool | What PiGuard alerts on | Install |
+|------|------------------------|---------|
+| **ClamAV** | Malware detected by a scan (`FOUND` lines in its log) | `sudo apt install clamav clamav-daemon` |
+| **rkhunter** | Rootkit or hidden file warnings | `sudo apt install rkhunter` |
+
+After installing, re-run `sudo piguard setup` to enable log monitoring, or set `security_tools.enabled: true` in `/etc/piguard/config.yaml`.
+
+> **Tip:** Schedule regular scans with cron so PiGuard reports findings in real-time as they happen:
+> ```
+> 0 3 * * * root /usr/bin/clamscan -r /home --quiet --log=/var/log/clamav/clamav.log
+> 0 4 * * * root /usr/bin/rkhunter --check --skip-keypress --report-warnings-only
+> ```
 
 ## Example Alerts
 
@@ -98,7 +117,7 @@ make build-all
 ## Roadmap
 
 - [x] **v0.1** — Event-driven port monitoring, firewall drift, system health, Telegram/ntfy/Discord
-- [ ] **v0.2** — File integrity monitoring (inotify)
+- [x] **v0.2** — File integrity monitoring (inotify), security tool log tailing (ClamAV, rkhunter)
 - [ ] **v0.3** — Docker container events and image age tracking
 - [ ] **v0.4** — Embedded web dashboard
 - [ ] **v0.5** — Smart baselines with learning mode

@@ -15,9 +15,11 @@ type Config struct {
 	Ports         PortConfig         `yaml:"ports"`
 	Firewall      FirewallConfig     `yaml:"firewall"`
 	System        SystemConfig       `yaml:"system"`
-	Alerts        AlertConfig        `yaml:"alerts"`
-	Baseline      BaselineConfig     `yaml:"baseline"`
-	Docker        DockerConfig       `yaml:"docker"`
+	Alerts          AlertConfig          `yaml:"alerts"`
+	Baseline        BaselineConfig       `yaml:"baseline"`
+	Docker          DockerConfig         `yaml:"docker"`
+	FileIntegrity   FileIntegrityConfig  `yaml:"file_integrity"`
+	SecurityTools   SecurityToolsConfig  `yaml:"security_tools"`
 }
 
 type NotificationConfig struct {
@@ -104,6 +106,25 @@ type DockerConfig struct {
 	Enabled bool `yaml:"enabled"`
 }
 
+type FileIntegrityConfig struct {
+	Enabled  bool        `yaml:"enabled"`
+	Paths    []WatchPath `yaml:"paths"`
+	Cooldown string      `yaml:"cooldown"`
+}
+
+type WatchPath struct {
+	Path        string `yaml:"path"`
+	Description string `yaml:"description"`
+	Severity    string `yaml:"severity"` // "warning" or "critical"
+}
+
+type SecurityToolsConfig struct {
+	Enabled      bool   `yaml:"enabled"`
+	ClamAVLog    string `yaml:"clamav_log"`    // default: /var/log/clamav/clamav.log
+	RKHunterLog  string `yaml:"rkhunter_log"`  // default: /var/log/rkhunter.log
+	PollInterval string `yaml:"poll_interval"` // default: 30s
+}
+
 // Load reads and parses the config file, expanding env vars
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
@@ -161,6 +182,25 @@ func DefaultConfig() *Config {
 		},
 		Docker: DockerConfig{
 			Enabled: true,
+		},
+		FileIntegrity: FileIntegrityConfig{
+			Enabled:  true,
+			Cooldown: "5m",
+			Paths: []WatchPath{
+				{Path: "/etc/passwd", Description: "User accounts", Severity: "critical"},
+				{Path: "/etc/shadow", Description: "Password hashes", Severity: "critical"},
+				{Path: "/etc/sudoers", Description: "Sudo rules", Severity: "critical"},
+				{Path: "/etc/ssh/sshd_config", Description: "SSH daemon config", Severity: "critical"},
+				{Path: "/etc/hosts", Description: "Host resolution", Severity: "warning"},
+				{Path: "/etc/crontab", Description: "System cron", Severity: "warning"},
+				{Path: "/etc/cron.d", Description: "Cron job directory", Severity: "warning"},
+			},
+		},
+		SecurityTools: SecurityToolsConfig{
+			Enabled:      false,
+			ClamAVLog:    "/var/log/clamav/clamav.log",
+			RKHunterLog:  "/var/log/rkhunter.log",
+			PollInterval: "30s",
 		},
 	}
 }

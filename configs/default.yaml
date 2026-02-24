@@ -67,3 +67,37 @@ baseline:
 # ── Docker ──
 docker:
   enabled: true
+
+# ── File integrity monitoring ──
+file_integrity:
+  enabled: true
+  cooldown: "5m"
+  paths:
+    - path: "/etc/passwd"
+      description: "User accounts"
+      severity: "critical"
+    - path: "/etc/shadow"
+      description: "Password hashes"
+      severity: "critical"
+    - path: "/etc/sudoers"
+      description: "Sudo rules"
+      severity: "critical"
+    - path: "/etc/ssh/sshd_config"
+      description: "SSH daemon config"
+      severity: "critical"
+    - path: "/etc/hosts"
+      description: "Host resolution"
+      severity: "warning"
+    - path: "/etc/crontab"
+      description: "System cron"
+      severity: "warning"
+    - path: "/etc/cron.d"
+      description: "Cron job directory"
+      severity: "warning"
+
+# ── Security tool log monitoring (ClamAV / rkhunter) ──
+security_tools:
+  enabled: false
+  clamav_log: "/var/log/clamav/clamav.log"
+  rkhunter_log: "/var/log/rkhunter.log"
+  poll_interval: "30s"

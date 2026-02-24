@@ -67,9 +67,16 @@ func New(cfg *config.Config) (*Daemon, error) {
 	}
 	d.watchers = append(d.watchers, watchers.NewSystemWatcher(cfg, bus))
 
+	if cfg.FileIntegrity.Enabled {
+		d.watchers = append(d.watchers, watchers.NewInotifyWatcher(cfg, bus))
+	}
+
 	// Telegram interactive bot (two-way commands)
 	if cfg.Notifications.Telegram.Enabled {
 		d.watchers = append(d.watchers, watchers.NewTelegramBotWatcher(cfg, bus, db))
+	}
+	if cfg.SecurityTools.Enabled {
+		d.watchers = append(d.watchers, watchers.NewSecToolsWatcher(cfg, bus))
 	}
 
 	// Register notifiers

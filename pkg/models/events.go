@@ -52,6 +52,8 @@ const (
 	EventContainerHealth EventType = "docker.container_unhealthy"
 	EventFileChanged     EventType = "file.changed"
 	EventDailySummary    EventType = "summary.daily"
+	EventMalwareFound    EventType = "malware.found"   // ClamAV FOUND line
+	EventRootkitWarning  EventType = "rootkit.warning" // rkhunter Warning: line
 )
 
 // PortInfo describes a listening port with full context
