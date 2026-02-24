@@ -1,0 +1,24 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - gocritic      # style and correctness suggestions
+    - misspell      # catch common English spelling mistakes in comments/strings
+    - gosec         # security-oriented checks (great fit for a security monitor)
+    - nilerr        # return nil instead of the actual error
+
+linters-settings:
+  gosec:
+    excludes:
+      # G304: file path provided as taint input — we intentionally read log paths
+      # from config, which is a root-owned file. Acceptable here.
+      - G304
+
+issues:
+  exclude-rules:
+    # Test files: relax some rules that are noisy in tests
+    - path: "_test\\.go"
+      linters:
+        - gosec
+        - errcheck

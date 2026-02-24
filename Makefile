@@ -3,7 +3,7 @@ VERSION := 0.1.0
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "dev")
 LDFLAGS := -ldflags "-s -w -X github.com/Fullex26/piguard/internal/daemon.Version=$(VERSION)-$(COMMIT)"
 
-.PHONY: build build-pi build-all test clean install
+.PHONY: build build-pi build-all test lint vuln clean install
 
 # Build for current platform
 build:
@@ -24,9 +24,17 @@ build-amd64:
 # Build all targets
 build-all: build-pi build-pi3 build-amd64
 
-# Run tests
+# Run tests with race detector
 test:
-	go test ./... -v
+	go test -race ./... -v
+
+# Run linter (requires golangci-lint: https://golangci-lint.run/usage/install/)
+lint:
+	golangci-lint run ./...
+
+# Scan for known vulnerabilities (requires govulncheck: go install golang.org/x/vuln/cmd/govulncheck@latest)
+vuln:
+	govulncheck ./...
 
 # Clean build artifacts
 clean:

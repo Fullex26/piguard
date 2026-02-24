@@ -19,7 +19,8 @@ import (
 	"github.com/Fullex26/piguard/pkg/models"
 )
 
-const Version = "0.1.0"
+// Version is set at build time via ldflags: -X github.com/Fullex26/piguard/internal/daemon.Version=<tag>
+var Version = "dev"
 
 // Daemon is the main PiGuard process
 type Daemon struct {
