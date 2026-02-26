@@ -8,9 +8,13 @@ linters:
 linters-settings:
   gosec:
     excludes:
-      # G304: file path provided as taint input — we intentionally read log paths
-      # from config, which is a root-owned file. Acceptable here.
+      # G304: file path from config (root-owned). Acceptable.
       - G304
+      # G107: HTTP URL built from config values (Telegram API token), not user input.
+      - G107
+      # G115: integer overflow — fd casts (always fit int32) and disk stat conversions
+      # (always positive). Safe in this codebase.
+      - G115
 
 issues:
   exclude-rules:

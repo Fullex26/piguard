@@ -181,9 +181,13 @@ type StatFS struct {
 	Bfree  uint64
 }
 
-// statfs wraps the syscall - implemented in statfs_linux.go
+// statfsImpl is set by statfs_linux.go on Linux via init().
+var statfsImpl func(string, *StatFS) error
+
+// statfs calls the platform-specific implementation set by statfs_linux.go.
 func statfs(path string, stat *StatFS) error {
-	// This will be implemented with syscall.Statfs in the linux build file
-	// For now return error so getDiskUsage falls back gracefully
-	return fmt.Errorf("not implemented on this platform")
+	if statfsImpl != nil {
+		return statfsImpl(path, stat)
+	}
+	return fmt.Errorf("statfs not supported on this platform")
 }
