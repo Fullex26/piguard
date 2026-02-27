@@ -9,8 +9,6 @@ func init() {
 	statfsImpl = statfsLinux
 }
 
-var statfsImpl func(string, *StatFS) error
-
 func statfsLinux(path string, stat *StatFS) error {
 	var s syscall.Statfs_t
 	if err := syscall.Statfs(path, &s); err != nil {

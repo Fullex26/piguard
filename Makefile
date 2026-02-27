@@ -3,7 +3,7 @@ VERSION := 0.1.0
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "dev")
 LDFLAGS := -ldflags "-s -w -X github.com/Fullex26/piguard/internal/daemon.Version=$(VERSION)-$(COMMIT)"
 
-.PHONY: build build-pi build-all test lint vuln clean install
+.PHONY: build build-pi build-all test lint vuln clean install deploy-pi
 
 # Build for current platform
 build:
@@ -54,6 +54,12 @@ install: build
 		sudo systemctl daemon-reload; \
 		echo "Systemd service installed. Enable with: sudo systemctl enable --now piguard"; \
 	fi
+
+# Deploy to Raspberry Pi over SSH (requires SSH access to 'fullexpi')
+PI_HOST ?= fullexpi
+deploy-pi: build-pi
+	scp bin/$(BINARY)-linux-arm64 $(PI_HOST):/tmp/piguard
+	ssh $(PI_HOST) "sudo systemctl stop piguard && sudo mv /tmp/piguard /usr/local/bin/piguard && sudo chmod 755 /usr/local/bin/piguard && sudo systemctl start piguard"
 
 # Dev: run locally
 dev:
