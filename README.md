@@ -112,15 +112,20 @@ make build-pi3
 
 # Build all targets
 make build-all
+
+# Cross-compile + deploy directly to Pi over SSH
+make deploy-pi                   # deploys to 'fullexpi' (default)
+make deploy-pi PI_HOST=other-pi  # override host
 ```
 
 ## Roadmap
 
 - [x] **v0.1** — Event-driven port monitoring, firewall drift, system health, Telegram/ntfy/Discord
 - [x] **v0.2** — File integrity monitoring (inotify), security tool log tailing (ClamAV, rkhunter)
-- [ ] **v0.3** — Docker container events and image age tracking
-- [ ] **v0.4** — Embedded web dashboard
-- [ ] **v0.5** — Smart baselines with learning mode
+- [ ] **v0.3** — Docker container events, image age tracking, and container/service control via Telegram bot
+- [ ] **v0.4** — System storage management (Docker pruning, cache cleanup, disk bloat reporting)
+- [ ] **v0.5** — Embedded web dashboard
+- [ ] **v0.6** — Smart baselines with learning mode
 - [ ] **v1.0** — Plugin system, multi-host, Prometheus metrics
 
 ## License
