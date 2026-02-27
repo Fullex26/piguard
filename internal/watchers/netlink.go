@@ -166,6 +166,10 @@ func (w *NetlinkWatcher) parseSsLine(line string) (models.PortInfo, error) {
 	host, _, err := net.SplitHostPort(localAddr)
 	if err == nil {
 		isExposed = host == "0.0.0.0" || host == "::" || host == "*"
+	} else {
+		// ss outputs IPv6 wildcard without brackets as :::port, which
+		// net.SplitHostPort rejects ("too many colons"). Handle manually.
+		isExposed = strings.HasPrefix(localAddr, ":::")
 	}
 
 	return models.PortInfo{

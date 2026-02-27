@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/Fullex26/piguard/internal/config"
 	"github.com/Fullex26/piguard/internal/eventbus"
@@ -133,7 +134,7 @@ func TestSecToolsWatcher_ScanLog_NewLines(t *testing.T) {
 		if e.Type != models.EventMalwareFound {
 			t.Errorf("event type = %q, want %q", e.Type, models.EventMalwareFound)
 		}
-	default:
+	case <-time.After(time.Second):
 		t.Error("expected an event to be published")
 	}
 }
