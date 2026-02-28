@@ -134,7 +134,7 @@ func TestGetRecentEvents_Empty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetRecentEvents: %v", err)
 	}
-	if events != nil && len(events) != 0 {
+	if len(events) != 0 {
 		t.Errorf("expected empty slice, got %d events", len(events))
 	}
 }
