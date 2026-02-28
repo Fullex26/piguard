@@ -67,6 +67,9 @@ baseline:
 # ── Docker ──
 docker:
   enabled: true
+  poll_interval: "10s"
+  # Set to true to alert when containers stop gracefully (can be noisy)
+  alert_on_stop: false
 
 # ── File integrity monitoring ──
 file_integrity:
@@ -101,3 +104,13 @@ security_tools:
   clamav_log: "/var/log/clamav/clamav.log"
   rkhunter_log: "/var/log/rkhunter.log"
   poll_interval: "30s"
+
+# ── Network device monitoring ──
+network:
+  enabled: false
+  poll_interval: "5m"
+  # Set to true to alert when known devices leave the network (can be noisy — ARP entries age out)
+  alert_on_leave: false
+  # MACs to never alert on (your router, own devices, etc.)
+  ignore_macs: []
+  #   - "aa:bb:cc:dd:ee:ff"

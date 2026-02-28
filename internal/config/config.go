@@ -20,6 +20,7 @@ type Config struct {
 	Docker          DockerConfig         `yaml:"docker"`
 	FileIntegrity   FileIntegrityConfig  `yaml:"file_integrity"`
 	SecurityTools   SecurityToolsConfig  `yaml:"security_tools"`
+	Network         NetworkConfig        `yaml:"network"`
 }
 
 type NotificationConfig struct {
@@ -103,7 +104,9 @@ type BaselineConfig struct {
 }
 
 type DockerConfig struct {
-	Enabled bool `yaml:"enabled"`
+	Enabled      bool   `yaml:"enabled"`
+	PollInterval string `yaml:"poll_interval"` // default: "10s"
+	AlertOnStop  bool   `yaml:"alert_on_stop"` // alert on graceful stop (default: false)
 }
 
 type FileIntegrityConfig struct {
@@ -123,6 +126,13 @@ type SecurityToolsConfig struct {
 	ClamAVLog    string `yaml:"clamav_log"`    // default: /var/log/clamav/clamav.log
 	RKHunterLog  string `yaml:"rkhunter_log"`  // default: /var/log/rkhunter.log
 	PollInterval string `yaml:"poll_interval"` // default: 30s
+}
+
+type NetworkConfig struct {
+	Enabled      bool     `yaml:"enabled"`
+	PollInterval string   `yaml:"poll_interval"` // default: "5m"
+	AlertOnLeave bool     `yaml:"alert_on_leave"` // alert when known device leaves
+	IgnoreMACs   []string `yaml:"ignore_macs"`    // MACs to never alert on
 }
 
 // Load reads and parses the config file, expanding env vars
@@ -181,7 +191,9 @@ func DefaultConfig() *Config {
 			LearningDuration: "7d",
 		},
 		Docker: DockerConfig{
-			Enabled: true,
+			Enabled:      true,
+			PollInterval: "10s",
+			AlertOnStop:  false,
 		},
 		FileIntegrity: FileIntegrityConfig{
 			Enabled:  true,
@@ -201,6 +213,11 @@ func DefaultConfig() *Config {
 			ClamAVLog:    "/var/log/clamav/clamav.log",
 			RKHunterLog:  "/var/log/rkhunter.log",
 			PollInterval: "30s",
+		},
+		Network: NetworkConfig{
+			Enabled:      false,
+			PollInterval: "5m",
+			AlertOnLeave: false,
 		},
 	}
 }

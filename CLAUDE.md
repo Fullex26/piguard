@@ -58,7 +58,9 @@ Watchers → eventbus.Bus → Daemon subscriber → Deduplicator → Notifiers
 - `SystemWatcher` — disk/memory/CPU temp thresholds
 - `FileIntegrityWatcher` — inotify-based monitoring of critical system files (`/etc/passwd`, SSH config, sudoers, crontab, etc.)
 - `SecurityToolsWatcher` — tails ClamAV and rkhunter logs; fires Critical alerts on malware/rootkit findings
-- `TelegramBotWatcher` — interactive two-way bot commands (registered as a watcher, not a notifier)
+- `TelegramBotWatcher` — interactive two-way bot commands (registered as a watcher, not a notifier); supports `/docker` subcommands (stop/restart/fix/logs/remove/prune)
+- `DockerWatcher` — polls `docker ps` for container lifecycle events (start/crash/stop/unhealthy)
+- `NetworkScanWatcher` — polls `ip neigh show` for new/departed ARP neighbours; alerts on unknown devices
 
 ## Config
 
@@ -74,3 +76,16 @@ New `EventType` constants belong in `pkg/models/events.go`.
 ## Deployment
 
 PiGuard runs as a systemd service (`configs/piguard.service`). The install script (`scripts/install.sh`) handles the full setup. Releases are managed by GoReleaser (`.goreleaser.yaml`).
+
+## Release Checklist
+
+**Run these steps at the end of every version / before any push:**
+
+1. **CHANGELOG.md** — add a `## [x.y.z] — YYYY-MM-DD` section above the previous version with `### Added / Fixed / Changed` bullets.
+2. **README.md roadmap** — mark the completed version `[x]`; verify upcoming versions still reflect current plans.
+3. **README.md "What It Monitors"** — add any new watcher capabilities introduced in this version.
+4. **Todo.txt** — review the file; any items that are now captured in the roadmap or completed can be removed. New ideas should be turned into a versioned roadmap entry.
+5. **`make test && make build-all`** — all tests pass and all three cross-compile targets build cleanly.
+6. **CLAUDE.md** — update `Watchers currently implemented` if a new watcher was added.
+
+Do **not** push or tag without completing this checklist.

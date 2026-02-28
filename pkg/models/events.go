@@ -47,13 +47,16 @@ const (
 	EventMemoryHigh      EventType = "system.memory_high"
 	EventTempHigh        EventType = "system.temp_high"
 	EventReboot          EventType = "system.reboot"
-	EventContainerDied   EventType = "docker.container_died"
-	EventContainerStart  EventType = "docker.container_start"
-	EventContainerHealth EventType = "docker.container_unhealthy"
-	EventFileChanged     EventType = "file.changed"
-	EventDailySummary    EventType = "summary.daily"
-	EventMalwareFound    EventType = "malware.found"   // ClamAV FOUND line
-	EventRootkitWarning  EventType = "rootkit.warning" // rkhunter Warning: line
+	EventContainerDied    EventType = "docker.container_died"
+	EventContainerStart   EventType = "docker.container_start"
+	EventContainerHealth  EventType = "docker.container_unhealthy"
+	EventContainerStopped EventType = "docker.container_stopped"
+	EventFileChanged      EventType = "file.changed"
+	EventDailySummary     EventType = "summary.daily"
+	EventMalwareFound     EventType = "malware.found"        // ClamAV FOUND line
+	EventRootkitWarning   EventType = "rootkit.warning"      // rkhunter Warning: line
+	EventNetworkNewDevice EventType = "network.new_device"   // Unknown device appeared on LAN
+	EventNetworkDeviceLeft EventType = "network.device_left" // Known device disappeared from LAN
 )
 
 // PortInfo describes a listening port with full context

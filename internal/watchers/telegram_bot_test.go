@@ -86,6 +86,107 @@ func TestCmdReboot_RequiresConfirmation(t *testing.T) {
 	}
 }
 
+// ── Docker subcommand router ──────────────────────────────────────────────────
+
+func TestCmdDockerRouter_UnknownSubcommand_ReturnsList(t *testing.T) {
+	w := &TelegramBotWatcher{}
+	// Unknown subcommand falls back to list + usage hint (docker unavailable in CI is fine).
+	result := w.cmdDockerRouter([]string{"/docker", "unknown_sub"})
+	// Should contain a usage hint with the subcommand list.
+	if !containsString(result, "stop") || !containsString(result, "restart") {
+		t.Errorf("expected usage hint in result, got: %q", result)
+	}
+}
+
+// ── stop ─────────────────────────────────────────────────────────────────────
+
+func TestCmdDockerStop_NoName(t *testing.T) {
+	w := &TelegramBotWatcher{}
+	result := w.cmdDockerStop([]string{})
+	if !containsString(result, "Usage") {
+		t.Errorf("expected usage message, got: %q", result)
+	}
+}
+
+// ── restart ───────────────────────────────────────────────────────────────────
+
+func TestCmdDockerRestart_NoName(t *testing.T) {
+	w := &TelegramBotWatcher{}
+	result := w.cmdDockerRestart([]string{})
+	if !containsString(result, "Usage") {
+		t.Errorf("expected usage message, got: %q", result)
+	}
+}
+
+// ── remove ────────────────────────────────────────────────────────────────────
+
+func TestCmdDockerRemove_NoName(t *testing.T) {
+	w := &TelegramBotWatcher{}
+	result := w.cmdDockerRemove([]string{})
+	if !containsString(result, "Usage") {
+		t.Errorf("expected usage message, got: %q", result)
+	}
+}
+
+func TestCmdDockerRemove_NoConfirm(t *testing.T) {
+	w := &TelegramBotWatcher{}
+	result := w.cmdDockerRemove([]string{"nginx"})
+	if !containsString(result, "CONFIRM") {
+		t.Errorf("expected CONFIRM prompt, got: %q", result)
+	}
+	if !containsString(result, "nginx") {
+		t.Errorf("expected container name in prompt, got: %q", result)
+	}
+}
+
+func TestCmdDockerRemove_WrongKeyword(t *testing.T) {
+	w := &TelegramBotWatcher{}
+	// A word other than CONFIRM should not satisfy the check.
+	result := w.cmdDockerRemove([]string{"nginx", "YES"})
+	if !containsString(result, "CONFIRM") {
+		t.Errorf("wrong keyword should not pass; expected CONFIRM prompt, got: %q", result)
+	}
+}
+
+// ── fix ───────────────────────────────────────────────────────────────────────
+
+func TestCmdDockerFix_NoName(t *testing.T) {
+	w := &TelegramBotWatcher{}
+	result := w.cmdDockerFix([]string{})
+	if !containsString(result, "Usage") {
+		t.Errorf("expected usage message, got: %q", result)
+	}
+}
+
+// ── logs ──────────────────────────────────────────────────────────────────────
+
+func TestCmdDockerLogs_NoName(t *testing.T) {
+	w := &TelegramBotWatcher{}
+	result := w.cmdDockerLogs([]string{})
+	if !containsString(result, "Usage") {
+		t.Errorf("expected usage message, got: %q", result)
+	}
+}
+
+// ── prune ─────────────────────────────────────────────────────────────────────
+
+func TestCmdDockerPrune_NoConfirm(t *testing.T) {
+	w := &TelegramBotWatcher{}
+	result := w.cmdDockerPrune([]string{})
+	if !containsString(result, "CONFIRM") {
+		t.Errorf("expected CONFIRM prompt, got: %q", result)
+	}
+}
+
+func TestCmdDockerPrune_WithWrongKeyword(t *testing.T) {
+	w := &TelegramBotWatcher{}
+	// A word other than CONFIRM should not satisfy the check.
+	result := w.cmdDockerPrune([]string{"YES"})
+	if !containsString(result, "CONFIRM") {
+		t.Errorf("wrong keyword should not pass; expected CONFIRM prompt, got: %q", result)
+	}
+}
+
 func containsString(s, sub string) bool {
 	for i := 0; i <= len(s)-len(sub); i++ {
 		if s[i:i+len(sub)] == sub {
