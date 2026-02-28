@@ -649,24 +649,44 @@ func (w *TelegramBotWatcher) cmdScan() string {
 	var b strings.Builder
 	b.WriteString("🔍 <b>Security Scan Results</b>\n\n")
 
-	// rkhunter
+	// rkhunter: exit 0 = clean, exit 1 = warnings found, exit 2+ = tool error
 	out, err := exec.Command("rkhunter", "--check", "--skip-keypress", "--report-warnings-only").CombinedOutput()
+	rkhunterOut := strings.TrimSpace(string(out))
 	if err != nil {
-		rkhunterOut := strings.TrimSpace(string(out))
-		if rkhunterOut != "" {
-			b.WriteString(fmt.Sprintf("⚠️ <b>rkhunter:</b>\n<code>%s</code>\n\n", truncate(rkhunterOut, 500)))
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			// Genuine security warnings
+			if rkhunterOut != "" {
+				b.WriteString(fmt.Sprintf("⚠️ <b>rkhunter:</b>\n<code>%s</code>\n\n", truncate(html.EscapeString(rkhunterOut), 500)))
+			} else {
+				b.WriteString("⚠️ <b>rkhunter:</b> Warnings detected (check log)\n\n")
+			}
 		} else {
-			b.WriteString("✅ <b>rkhunter:</b> No warnings\n\n")
+			// Tool error (permissions, not installed, etc.) — not a security finding
+			msg := rkhunterOut
+			if msg == "" {
+				msg = err.Error()
+			}
+			b.WriteString(fmt.Sprintf("❌ <b>rkhunter:</b> scan error\n<code>%s</code>\n\n", truncate(html.EscapeString(msg), 300)))
 		}
 	} else {
 		b.WriteString("✅ <b>rkhunter:</b> No warnings\n\n")
 	}
 
-	// Quick ClamAV scan of key dirs
-	out, _ = exec.Command("clamscan", "-r", "--quiet", "--infected", "/home", "/tmp", "/var/tmp").CombinedOutput()
+	// ClamAV: exit 0 = clean, exit 1 = infected files found, exit 2+ = tool error
+	out, err = exec.Command("clamscan", "-r", "--quiet", "--infected", "/home", "/tmp", "/var/tmp").CombinedOutput()
 	clamOut := strings.TrimSpace(string(out))
-	if clamOut != "" {
-		b.WriteString(fmt.Sprintf("⚠️ <b>ClamAV:</b>\n<code>%s</code>\n", truncate(clamOut, 500)))
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			// Actual infections found — clamscan --infected only prints infected paths
+			b.WriteString(fmt.Sprintf("⚠️ <b>ClamAV:</b>\n<code>%s</code>\n", truncate(html.EscapeString(clamOut), 500)))
+		} else {
+			// Tool error (temp dir permissions, library issue, etc.) — not a security finding
+			msg := clamOut
+			if msg == "" {
+				msg = err.Error()
+			}
+			b.WriteString(fmt.Sprintf("❌ <b>ClamAV:</b> scan error\n<code>%s</code>\n", truncate(html.EscapeString(msg), 300)))
+		}
 	} else {
 		b.WriteString("✅ <b>ClamAV:</b> No threats found\n")
 	}
