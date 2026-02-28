@@ -48,7 +48,7 @@ func TestShouldAlert_DuplicateAfterCooldown(t *testing.T) {
 	}
 }
 
-func TestShouldAlert_CriticalAlwaysAlerts(t *testing.T) {
+func TestShouldAlert_CriticalFirstAlerts_ThenDeduped(t *testing.T) {
 	d := NewDeduplicator(time.Hour) // very long cooldown
 	e := models.Event{
 		Type:     models.EventFirewallChanged,
@@ -56,9 +56,15 @@ func TestShouldAlert_CriticalAlwaysAlerts(t *testing.T) {
 		Message:  "firewall breached",
 	}
 
-	for i := range 5 {
-		if !d.ShouldAlert(e) {
-			t.Errorf("critical event iteration %d should always alert", i)
+	// First occurrence must always get through regardless of severity.
+	if !d.ShouldAlert(e) {
+		t.Error("first critical event should alert")
+	}
+	// Subsequent identical criticals must be suppressed within the cooldown window.
+	// This prevents persistent conditions (e.g. missing iptables rule) from flooding alerts.
+	for i := range 4 {
+		if d.ShouldAlert(e) {
+			t.Errorf("repeated critical event iteration %d should be deduplicated within cooldown", i+1)
 		}
 	}
 }

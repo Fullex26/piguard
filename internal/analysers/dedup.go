@@ -21,18 +21,15 @@ func NewDeduplicator(cooldown time.Duration) *Deduplicator {
 	}
 }
 
-// ShouldAlert returns true if this event hasn't been sent recently
+// ShouldAlert returns true if this event hasn't been sent recently.
+// All severities — including Critical — respect the cooldown so that a
+// persistent condition (e.g. a missing firewall rule) does not flood alerts.
+// The first occurrence of any event always gets through (key not yet seen).
 func (d *Deduplicator) ShouldAlert(event models.Event) bool {
 	key := d.dedupKey(event)
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
-
-	// Critical events always get through
-	if event.Severity == models.SeverityCritical {
-		d.seen[key] = time.Now()
-		return true
-	}
 
 	lastSent, exists := d.seen[key]
 	if !exists || time.Since(lastSent) > d.cooldown {
