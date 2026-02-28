@@ -120,13 +120,14 @@ make deploy-pi PI_HOST=other-pi  # override host
 
 ## Roadmap
 
-- [x] **v0.1** — Event-driven port monitoring, firewall drift, system health, Telegram/ntfy/Discord
-- [x] **v0.2** — File integrity monitoring (inotify), security tool log tailing (ClamAV, rkhunter)
-- [ ] **v0.3** — Docker container events, image age tracking, and container/service control via Telegram bot
-- [ ] **v0.4** — System storage management (Docker pruning, cache cleanup, disk bloat reporting)
-- [ ] **v0.5** — Embedded web dashboard
-- [ ] **v0.6** — Smart baselines with learning mode
-- [ ] **v1.0** — Plugin system, multi-host, Prometheus metrics
+- [x] **v0.1** — Port monitoring, firewall drift, system health, file integrity, ClamAV/rkhunter alerts, Telegram/Discord/ntfy/webhook notifiers
+- [ ] **v0.2** — Docker container event monitoring (start/stop/crash/unhealthy)
+- [ ] **v0.3** — Telegram bot commands: list/stop/restart Docker services
+- [ ] **v0.4** — System storage management via Telegram: Docker pruning, cache cleanup, disk reporting
+- [ ] **v0.5** — Auto-update support: scheduled `apt upgrade`, clean, and status reporting
+- [ ] **v0.6** — Embedded web dashboard
+- [ ] **v0.7** — Smart baselines with learning mode
+- [ ] **v1.0** — Plugin system, multi-host support, Prometheus metrics
 
 ## License
 
