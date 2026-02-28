@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"log/slog"
 	"net/http"
@@ -151,7 +152,7 @@ func (w *TelegramBotWatcher) handleCommand(text string) {
 	case "/firewall", "/fw":
 		response = w.cmdFirewall()
 	case "/docker", "/containers":
-		response = w.cmdDocker()
+		response = w.cmdDockerRouter(parts)
 	case "/disk":
 		response = w.cmdDisk()
 	case "/temp", "/temperature":
@@ -214,6 +215,12 @@ func (w *TelegramBotWatcher) cmdHelp() string {
 
 <b>Docker</b>
 /docker — Container status
+/docker stop &lt;name&gt; — Stop a container
+/docker restart &lt;name&gt; — Restart a container
+/docker fix &lt;name&gt; — Restart unhealthy/exited container
+/docker logs &lt;name&gt; — Show last 20 log lines
+/docker remove &lt;name&gt; CONFIRM — Force-remove a container
+/docker prune CONFIRM — Remove all stopped containers
 /services — Running services
 
 <b>Danger zone</b>
@@ -379,6 +386,119 @@ func (w *TelegramBotWatcher) cmdDocker() string {
 	}
 
 	return b.String()
+}
+
+// cmdDockerRouter dispatches /docker subcommands. With no subcommand it falls
+// back to the container-list view so existing behaviour is preserved.
+func (w *TelegramBotWatcher) cmdDockerRouter(parts []string) string {
+	if len(parts) < 2 {
+		return w.cmdDocker()
+	}
+	args := parts[2:] // everything after the subcommand
+	switch strings.ToLower(parts[1]) {
+	case "stop":
+		return w.cmdDockerStop(args)
+	case "restart":
+		return w.cmdDockerRestart(args)
+	case "remove", "rm":
+		return w.cmdDockerRemove(args)
+	case "fix":
+		return w.cmdDockerFix(args)
+	case "logs":
+		return w.cmdDockerLogs(args)
+	case "prune":
+		return w.cmdDockerPrune(args)
+	default:
+		return w.cmdDocker() + "\n\n<i>Usage: /docker [stop|restart|remove|fix|logs|prune] &lt;name&gt;</i>"
+	}
+}
+
+func (w *TelegramBotWatcher) cmdDockerStop(args []string) string {
+	if len(args) == 0 {
+		return "Usage: /docker stop &lt;name&gt;"
+	}
+	name := args[0]
+	out, err := exec.Command("docker", "stop", name).CombinedOutput()
+	if err != nil {
+		return fmt.Sprintf("❌ Failed to stop <b>%s</b>: %s",
+			html.EscapeString(name), html.EscapeString(strings.TrimSpace(string(out))))
+	}
+	return fmt.Sprintf("⏹️ Container <b>%s</b> stopped.", html.EscapeString(name))
+}
+
+func (w *TelegramBotWatcher) cmdDockerRestart(args []string) string {
+	if len(args) == 0 {
+		return "Usage: /docker restart &lt;name&gt;"
+	}
+	name := args[0]
+	out, err := exec.Command("docker", "restart", name).CombinedOutput()
+	if err != nil {
+		return fmt.Sprintf("❌ Failed to restart <b>%s</b>: %s",
+			html.EscapeString(name), html.EscapeString(strings.TrimSpace(string(out))))
+	}
+	return fmt.Sprintf("🔄 Container <b>%s</b> restarted.", html.EscapeString(name))
+}
+
+func (w *TelegramBotWatcher) cmdDockerRemove(args []string) string {
+	if len(args) == 0 {
+		return "Usage: /docker remove &lt;name&gt; CONFIRM"
+	}
+	name := args[0]
+	safeName := html.EscapeString(name)
+	if len(args) < 2 || strings.ToUpper(args[len(args)-1]) != "CONFIRM" {
+		return fmt.Sprintf("⚠️ This will force-remove container <b>%s</b>.\n\nSend: /docker remove %s CONFIRM", safeName, name)
+	}
+	out, err := exec.Command("docker", "rm", "-f", name).CombinedOutput()
+	if err != nil {
+		return fmt.Sprintf("❌ Failed to remove <b>%s</b>: %s",
+			safeName, html.EscapeString(strings.TrimSpace(string(out))))
+	}
+	return fmt.Sprintf("🗑️ Container <b>%s</b> removed.", safeName)
+}
+
+// cmdDockerFix is a UX alias for restart, targeted at unhealthy/exited containers.
+func (w *TelegramBotWatcher) cmdDockerFix(args []string) string {
+	if len(args) == 0 {
+		return "Usage: /docker fix &lt;name&gt;"
+	}
+	name := args[0]
+	out, err := exec.Command("docker", "restart", name).CombinedOutput()
+	if err != nil {
+		return fmt.Sprintf("❌ Failed to restart <b>%s</b>: %s",
+			html.EscapeString(name), html.EscapeString(strings.TrimSpace(string(out))))
+	}
+	return fmt.Sprintf("🔧 Container <b>%s</b> restarted (fix applied).\nDockerWatcher will confirm recovery within 10s.", html.EscapeString(name))
+}
+
+func (w *TelegramBotWatcher) cmdDockerLogs(args []string) string {
+	if len(args) == 0 {
+		return "Usage: /docker logs &lt;name&gt;"
+	}
+	name := args[0]
+	out, err := exec.Command("docker", "logs", "--tail", "20", name).CombinedOutput()
+	if err != nil {
+		return fmt.Sprintf("❌ Failed to get logs for <b>%s</b>: %s",
+			html.EscapeString(name), html.EscapeString(strings.TrimSpace(string(out))))
+	}
+	result := strings.TrimSpace(string(out))
+	if result == "" {
+		return fmt.Sprintf("📋 No log output for <b>%s</b>", html.EscapeString(name))
+	}
+	return fmt.Sprintf("📋 <b>Logs — %s</b> (last 20 lines)\n\n<code>%s</code>",
+		html.EscapeString(name), truncate(html.EscapeString(result), 3000))
+}
+
+func (w *TelegramBotWatcher) cmdDockerPrune(args []string) string {
+	if len(args) == 0 || strings.ToUpper(args[len(args)-1]) != "CONFIRM" {
+		return "⚠️ <b>Docker system prune</b> removes all stopped containers, unused networks, dangling images, and build cache.\n\nSend: /docker prune CONFIRM"
+	}
+	w.sendReply("🧹 Running docker system prune...")
+	out, err := exec.Command("docker", "system", "prune", "-f").CombinedOutput()
+	if err != nil {
+		return fmt.Sprintf("❌ Prune failed: %s", truncate(html.EscapeString(strings.TrimSpace(string(out))), 500))
+	}
+	return fmt.Sprintf("🧹 <b>Docker pruned:</b>\n<code>%s</code>",
+		truncate(html.EscapeString(strings.TrimSpace(string(out))), 800))
 }
 
 func (w *TelegramBotWatcher) cmdDisk() string {

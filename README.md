@@ -36,7 +36,8 @@ sudo systemctl enable --now piguard
 - **Firewall**: Watches iptables chains for policy changes or missing rules
 - **System**: Disk, memory, CPU temperature (Pi thermal sensor)
 - **File integrity**: Detects changes to critical system files (`/etc/passwd`, SSH config, sudoers, crontab, etc.)
-- **Docker containers**: Alerts on container start, crash (non-zero exit), graceful stop (opt-in), and health transitions
+- **Docker containers**: Alerts on container start, crash (non-zero exit), graceful stop (opt-in), and health transitions; interactive Telegram controls (stop/restart/fix/logs/remove/prune)
+- **Network devices**: Detects new/unknown devices on the local network via ARP neighbour table (`ip neigh show`)
 - **Security tools**: Tails ClamAV and rkhunter logs — fires Critical alerts on malware detections or rootkit warnings
 - **Daily summary**: 8am digest with full system status
 
@@ -123,7 +124,7 @@ make deploy-pi PI_HOST=other-pi  # override host
 
 - [x] **v0.1** — Port monitoring, firewall drift, system health, file integrity, ClamAV/rkhunter alerts, Telegram/Discord/ntfy/webhook notifiers
 - [x] **v0.2** — Docker container event monitoring (start/stop/crash/unhealthy)
-- [ ] **v0.3** — Telegram bot control: list/stop/restart/remove Docker containers; fix unhealthy containers; Docker network monitoring (new devices, up/down status)
+- [x] **v0.3** — Telegram bot Docker control (stop/restart/fix/logs/remove/prune); NetworkScanWatcher (ARP-based new device detection)
 - [ ] **v0.4** — System storage management via Telegram: Docker image/volume pruning, apt cache cleanup, disk usage reports
 - [ ] **v0.5** — `piguard doctor` CLI command: health-check of installation, config, dependencies, and installed security tools (ClamAV, rkhunter, Docker, iptables)
 - [ ] **v0.6** — Auto-update support: scheduled `apt upgrade` + clean with Telegram confirmation and status reporting

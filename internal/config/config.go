@@ -20,6 +20,7 @@ type Config struct {
 	Docker          DockerConfig         `yaml:"docker"`
 	FileIntegrity   FileIntegrityConfig  `yaml:"file_integrity"`
 	SecurityTools   SecurityToolsConfig  `yaml:"security_tools"`
+	Network         NetworkConfig        `yaml:"network"`
 }
 
 type NotificationConfig struct {
@@ -127,6 +128,13 @@ type SecurityToolsConfig struct {
 	PollInterval string `yaml:"poll_interval"` // default: 30s
 }
 
+type NetworkConfig struct {
+	Enabled      bool     `yaml:"enabled"`
+	PollInterval string   `yaml:"poll_interval"` // default: "5m"
+	AlertOnLeave bool     `yaml:"alert_on_leave"` // alert when known device leaves
+	IgnoreMACs   []string `yaml:"ignore_macs"`    // MACs to never alert on
+}
+
 // Load reads and parses the config file, expanding env vars
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
@@ -205,6 +213,11 @@ func DefaultConfig() *Config {
 			ClamAVLog:    "/var/log/clamav/clamav.log",
 			RKHunterLog:  "/var/log/rkhunter.log",
 			PollInterval: "30s",
+		},
+		Network: NetworkConfig{
+			Enabled:      false,
+			PollInterval: "5m",
+			AlertOnLeave: false,
 		},
 	}
 }

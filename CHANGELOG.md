@@ -7,6 +7,26 @@ PiGuard uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.3.0] — 2026-02-28
+
+### Added
+- **Telegram Docker control** — interactive subcommands under `/docker`:
+  - `/docker stop <name>` — stop a container
+  - `/docker restart <name>` — restart a container
+  - `/docker fix <name>` — restart an unhealthy/exited container (UX alias for restart)
+  - `/docker logs <name>` — show last 20 lines of container logs
+  - `/docker remove <name> CONFIRM` — force-remove a container (requires confirmation)
+  - `/docker prune CONFIRM` — `docker system prune -f` (requires confirmation)
+  - `/docker` (no args) — unchanged; still lists running containers
+- **NetworkScanWatcher** — polls `ip neigh show` (ARP neighbour table) every 5 minutes for unknown devices; alerts when a new MAC appears on the LAN
+- New config section `network` with `enabled`, `poll_interval`, `alert_on_leave`, and `ignore_macs`
+- New event types `network.new_device` and `network.device_left`
+- Updated `/help` command with full Docker subcommand reference
+
+[0.3.0]: https://github.com/Fullex26/piguard/releases/tag/v0.3.0
+
+---
+
 ## [0.2.0] — 2026-02-28
 
 ### Added

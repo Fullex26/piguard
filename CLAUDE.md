@@ -58,8 +58,9 @@ Watchers → eventbus.Bus → Daemon subscriber → Deduplicator → Notifiers
 - `SystemWatcher` — disk/memory/CPU temp thresholds
 - `FileIntegrityWatcher` — inotify-based monitoring of critical system files (`/etc/passwd`, SSH config, sudoers, crontab, etc.)
 - `SecurityToolsWatcher` — tails ClamAV and rkhunter logs; fires Critical alerts on malware/rootkit findings
-- `TelegramBotWatcher` — interactive two-way bot commands (registered as a watcher, not a notifier)
+- `TelegramBotWatcher` — interactive two-way bot commands (registered as a watcher, not a notifier); supports `/docker` subcommands (stop/restart/fix/logs/remove/prune)
 - `DockerWatcher` — polls `docker ps` for container lifecycle events (start/crash/stop/unhealthy)
+- `NetworkScanWatcher` — polls `ip neigh show` for new/departed ARP neighbours; alerts on unknown devices
 
 ## Config
 
