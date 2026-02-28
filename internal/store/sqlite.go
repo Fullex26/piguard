@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -120,7 +121,10 @@ func (s *Store) GetLastAlertTime() (string, error) {
 		ORDER BY timestamp DESC
 		LIMIT 1`).Scan(&timestamp)
 	if err != nil {
-		return "never", nil
+		if errors.Is(err, sql.ErrNoRows) {
+			return "never", nil
+		}
+		return "never", err
 	}
 
 	diff := time.Since(timestamp)

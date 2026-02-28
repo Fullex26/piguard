@@ -20,8 +20,6 @@ import (
 	"github.com/Fullex26/piguard/internal/store"
 )
 
-const telegramPollInterval = 2 * time.Second
-
 // TelegramBotWatcher polls for incoming Telegram messages and handles commands
 type TelegramBotWatcher struct {
 	Base
@@ -545,7 +543,7 @@ func (w *TelegramBotWatcher) cmdScan() string {
 	}
 
 	// Quick ClamAV scan of key dirs
-	out, err = exec.Command("clamscan", "-r", "--quiet", "--infected", "/home", "/tmp", "/var/tmp").CombinedOutput()
+	out, _ = exec.Command("clamscan", "-r", "--quiet", "--infected", "/home", "/tmp", "/var/tmp").CombinedOutput()
 	clamOut := strings.TrimSpace(string(out))
 	if clamOut != "" {
 		b.WriteString(fmt.Sprintf("⚠️ <b>ClamAV:</b>\n<code>%s</code>\n", truncate(clamOut, 500)))
@@ -621,7 +619,7 @@ func (w *TelegramBotWatcher) cmdReboot(parts []string) string {
 
 	go func() {
 		time.Sleep(5 * time.Second)
-		exec.Command("reboot").Run()
+		_ = exec.Command("reboot").Run()
 	}()
 
 	return ""

@@ -76,7 +76,7 @@ func (w *InotifyWatcher) Start(ctx context.Context) error {
 
 	go func() {
 		<-ctx.Done()
-		unix.Write(pipe[1], []byte{1})
+		_, _ = unix.Write(pipe[1], []byte{1})
 		unix.Close(pipe[1])
 	}()
 

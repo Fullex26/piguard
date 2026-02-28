@@ -112,10 +112,7 @@ func (w *NetlinkWatcher) scanPorts() ([]models.PortInfo, error) {
 	var ports []models.PortInfo
 	scanner := bufio.NewScanner(strings.NewReader(string(out)))
 
-	// Skip header line
-	if scanner.Scan() {
-		// header consumed
-	}
+	scanner.Scan() // skip header line
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -217,7 +214,7 @@ func (w *NetlinkWatcher) emitPortOpened(port models.PortInfo) {
 
 	if port.IsExposed {
 		details = "Bound to all interfaces — accessible from network"
-		suggested = fmt.Sprintf("If this should be local-only, bind to 127.0.0.1 instead of 0.0.0.0")
+		suggested = "If this should be local-only, bind to 127.0.0.1 instead of 0.0.0.0"
 		severity = models.SeverityWarning
 	} else {
 		details = "Localhost only — not network accessible ✓"
