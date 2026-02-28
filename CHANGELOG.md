@@ -7,6 +7,21 @@ PiGuard uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.2.0] — 2026-02-28
+
+### Added
+- **DockerWatcher** — polls `docker ps` every 10 seconds and alerts on:
+  - Container started / restarted
+  - Container crashed (non-zero exit code)
+  - Container went unhealthy (requires HEALTHCHECK in Dockerfile)
+  - Container stopped gracefully (opt-in via `alert_on_stop: true`)
+- New config fields `docker.poll_interval` and `docker.alert_on_stop`
+- New event type `docker.container_stopped` for graceful stops
+
+[0.2.0]: https://github.com/Fullex26/piguard/releases/tag/v0.2.0
+
+---
+
 ## [0.1.0] — 2026-02-28
 
 First public release.

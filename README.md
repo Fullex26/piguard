@@ -36,6 +36,7 @@ sudo systemctl enable --now piguard
 - **Firewall**: Watches iptables chains for policy changes or missing rules
 - **System**: Disk, memory, CPU temperature (Pi thermal sensor)
 - **File integrity**: Detects changes to critical system files (`/etc/passwd`, SSH config, sudoers, crontab, etc.)
+- **Docker containers**: Alerts on container start, crash (non-zero exit), graceful stop (opt-in), and health transitions
 - **Security tools**: Tails ClamAV and rkhunter logs — fires Critical alerts on malware detections or rootkit warnings
 - **Daily summary**: 8am digest with full system status
 
@@ -121,12 +122,13 @@ make deploy-pi PI_HOST=other-pi  # override host
 ## Roadmap
 
 - [x] **v0.1** — Port monitoring, firewall drift, system health, file integrity, ClamAV/rkhunter alerts, Telegram/Discord/ntfy/webhook notifiers
-- [ ] **v0.2** — Docker container event monitoring (start/stop/crash/unhealthy)
-- [ ] **v0.3** — Telegram bot commands: list/stop/restart Docker services
-- [ ] **v0.4** — System storage management via Telegram: Docker pruning, cache cleanup, disk reporting
-- [ ] **v0.5** — Auto-update support: scheduled `apt upgrade`, clean, and status reporting
-- [ ] **v0.6** — Embedded web dashboard
-- [ ] **v0.7** — Smart baselines with learning mode
+- [x] **v0.2** — Docker container event monitoring (start/stop/crash/unhealthy)
+- [ ] **v0.3** — Telegram bot control: list/stop/restart/remove Docker containers; fix unhealthy containers; Docker network monitoring (new devices, up/down status)
+- [ ] **v0.4** — System storage management via Telegram: Docker image/volume pruning, apt cache cleanup, disk usage reports
+- [ ] **v0.5** — `piguard doctor` CLI command: health-check of installation, config, dependencies, and installed security tools (ClamAV, rkhunter, Docker, iptables)
+- [ ] **v0.6** — Auto-update support: scheduled `apt upgrade` + clean with Telegram confirmation and status reporting
+- [ ] **v0.7** — Embedded web dashboard
+- [ ] **v0.8** — Smart baselines with learning mode
 - [ ] **v1.0** — Plugin system, multi-host support, Prometheus metrics
 
 ## License

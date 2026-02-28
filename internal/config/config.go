@@ -103,7 +103,9 @@ type BaselineConfig struct {
 }
 
 type DockerConfig struct {
-	Enabled bool `yaml:"enabled"`
+	Enabled      bool   `yaml:"enabled"`
+	PollInterval string `yaml:"poll_interval"` // default: "10s"
+	AlertOnStop  bool   `yaml:"alert_on_stop"` // alert on graceful stop (default: false)
 }
 
 type FileIntegrityConfig struct {
@@ -181,7 +183,9 @@ func DefaultConfig() *Config {
 			LearningDuration: "7d",
 		},
 		Docker: DockerConfig{
-			Enabled: true,
+			Enabled:      true,
+			PollInterval: "10s",
+			AlertOnStop:  false,
 		},
 		FileIntegrity: FileIntegrityConfig{
 			Enabled:  true,

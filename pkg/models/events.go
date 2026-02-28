@@ -47,9 +47,10 @@ const (
 	EventMemoryHigh      EventType = "system.memory_high"
 	EventTempHigh        EventType = "system.temp_high"
 	EventReboot          EventType = "system.reboot"
-	EventContainerDied   EventType = "docker.container_died"
-	EventContainerStart  EventType = "docker.container_start"
-	EventContainerHealth EventType = "docker.container_unhealthy"
+	EventContainerDied    EventType = "docker.container_died"
+	EventContainerStart   EventType = "docker.container_start"
+	EventContainerHealth  EventType = "docker.container_unhealthy"
+	EventContainerStopped EventType = "docker.container_stopped"
 	EventFileChanged     EventType = "file.changed"
 	EventDailySummary    EventType = "summary.daily"
 	EventMalwareFound    EventType = "malware.found"   // ClamAV FOUND line

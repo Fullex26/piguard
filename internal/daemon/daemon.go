@@ -79,6 +79,9 @@ func New(cfg *config.Config) (*Daemon, error) {
 	if cfg.SecurityTools.Enabled {
 		d.watchers = append(d.watchers, watchers.NewSecToolsWatcher(cfg, bus))
 	}
+	if cfg.Docker.Enabled {
+		d.watchers = append(d.watchers, watchers.NewDockerWatcher(cfg, bus))
+	}
 
 	// Register notifiers
 	if cfg.Notifications.Telegram.Enabled {

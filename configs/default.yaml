@@ -67,6 +67,9 @@ baseline:
 # ── Docker ──
 docker:
   enabled: true
+  poll_interval: "10s"
+  # Set to true to alert when containers stop gracefully (can be noisy)
+  alert_on_stop: false
 
 # ── File integrity monitoring ──
 file_integrity:
