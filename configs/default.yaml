@@ -42,7 +42,8 @@ firewall:
       expect_policy: "DROP"
     - table: "filter"
       chain: "DOCKER-USER"
-      expect_rule: "DROP.*0.0.0.0/0"
+      # Matches either a bare DROP rule or the ufw-docker-logging-deny jump used by UFW-Docker
+      expect_rule: "DROP.*0.0.0.0/0|ufw-docker-logging-deny"
   check_interval: "60s"
 
 # ── System health ──
