@@ -154,8 +154,12 @@ func (d *Daemon) Run() error {
 
 	// Startup notification
 	for _, n := range d.notifiers {
-		_ = n.SendRaw(fmt.Sprintf("🛡️ <b>PiGuard started</b> on %s\nVersion %s | %d watchers | %d notifiers",
-			hostname, Version, len(d.watchers), len(d.notifiers)))
+		msg := fmt.Sprintf("🛡️ <b>PiGuard started</b> on %s\nVersion %s | %d watchers | %d notifiers",
+			hostname, Version, len(d.watchers), len(d.notifiers))
+		slog.Info("sending notification", "notifier", n.Name(), "type", "startup")
+		if err := n.SendRaw(msg); err != nil {
+			slog.Error("notification failed", "notifier", n.Name(), "type", "startup", "error", err)
+		}
 	}
 
 	// Wait for shutdown signal
@@ -188,6 +192,12 @@ func (d *Daemon) handleEvent(event models.Event) {
 
 	// Send to all notifiers
 	for _, n := range d.notifiers {
+		slog.Info("sending notification",
+			"notifier", n.Name(),
+			"type", string(event.Type),
+			"severity", event.Severity.String(),
+			"message", event.Message,
+		)
 		if err := n.Send(event); err != nil {
 			slog.Error("notification failed", "notifier", n.Name(), "error", err)
 		}
@@ -217,7 +227,10 @@ func (d *Daemon) runDailySummary(ctx context.Context) {
 
 			msg := notifiers.FormatDailySummary(hostname, health, lastAlert)
 			for _, n := range d.notifiers {
-				_ = n.SendRaw(msg)
+				slog.Info("sending notification", "notifier", n.Name(), "type", "daily_summary")
+				if err := n.SendRaw(msg); err != nil {
+					slog.Error("notification failed", "notifier", n.Name(), "type", "daily_summary", "error", err)
+				}
 			}
 
 			// Sleep past this minute to avoid double-send

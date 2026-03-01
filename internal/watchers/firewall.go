@@ -130,7 +130,7 @@ func (w *FirewallWatcher) checkExpectations() {
 					Hostname:  hostname,
 					Timestamp: time.Now(),
 					Message:   fmt.Sprintf("Expected rule missing in %s chain (pattern: %s)", chain.Chain, chain.ExpectRule),
-					Suggested: "Check your DOCKER-USER chain: sudo iptables -L DOCKER-USER -n --line-numbers",
+					Suggested: fmt.Sprintf("Check your %s chain: sudo iptables -t %s -L %s -n --line-numbers", chain.Chain, chain.Table, chain.Chain),
 					Source:    "firewall",
 					Firewall: &models.FirewallState{
 						Chain:       chain.Chain,

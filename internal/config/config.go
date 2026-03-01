@@ -170,7 +170,7 @@ func DefaultConfig() *Config {
 			CheckInterval: "60s",
 			Chains: []ChainConfig{
 				{Table: "filter", Chain: "INPUT", ExpectPolicy: "DROP"},
-				{Table: "filter", Chain: "DOCKER-USER", ExpectRule: "DROP.*0.0.0.0/0"},
+				{Table: "filter", Chain: "DOCKER-USER", ExpectRule: "DROP.*0.0.0.0/0|ufw-docker-logging-deny"},
 			},
 		},
 		System: SystemConfig{
