@@ -1,3 +1,5 @@
+version: "2"
+
 linters:
   enable:
     - gocritic      # style and correctness suggestions
@@ -5,21 +7,21 @@ linters:
     - gosec         # security-oriented checks (great fit for a security monitor)
     - nilerr        # return nil instead of the actual error
 
-linters-settings:
-  gosec:
-    excludes:
-      # G304: file path from config (root-owned). Acceptable.
-      - G304
-      # G107: HTTP URL built from config values (Telegram API token), not user input.
-      - G107
-      # G115: integer overflow — fd casts (always fit int32) and disk stat conversions
-      # (always positive). Safe in this codebase.
-      - G115
+  settings:
+    gosec:
+      excludes:
+        # G304: file path from config (root-owned). Acceptable.
+        - G304
+        # G107: HTTP URL built from config values (Telegram API token), not user input.
+        - G107
+        # G115: integer overflow — fd casts (always fit int32) and disk stat conversions
+        # (always positive). Safe in this codebase.
+        - G115
 
-issues:
-  exclude-rules:
-    # Test files: relax some rules that are noisy in tests
-    - path: "_test\\.go"
-      linters:
-        - gosec
-        - errcheck
+  exclusions:
+    rules:
+      # Test files: relax some rules that are noisy in tests
+      - path: "_test\\.go"
+        linters:
+          - gosec
+          - errcheck
