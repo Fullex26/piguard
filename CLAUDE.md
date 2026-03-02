@@ -15,7 +15,9 @@ make build-pi3      # Cross-compile for Pi 3 (armv7)
 make build-amd64    # Cross-compile for x86 Linux
 make build-all      # All cross-compile targets
 
-make test           # go test ./... -v
+make test           # go test -race ./... -v  (race detector enabled)
+make lint           # golangci-lint run ./...  (requires golangci-lint)
+make vuln           # govulncheck ./...        (requires govulncheck)
 make clean          # Remove bin/
 
 make dev            # go run ./cmd/piguard run --config configs/default.yaml
@@ -62,6 +64,16 @@ Watchers → eventbus.Bus → Daemon subscriber → Deduplicator → Notifiers
 - `DockerWatcher` — polls `docker ps` for container lifecycle events (start/crash/stop/unhealthy)
 - `NetworkScanWatcher` — polls `ip neigh show` for new/departed ARP neighbours; alerts on unknown devices
 
+## CLI Subcommands
+
+```bash
+piguard run [--config PATH]   # Start daemon (default config: /etc/piguard/config.yaml)
+piguard status                # Show events from last 24 h (reads SQLite directly)
+piguard test                  # Fire a test notification to all configured channels
+piguard setup [--env-file PATH] # Interactive wizard — creates config YAML + /etc/piguard/env
+piguard version               # Print version string
+```
+
 ## Config
 
 Config file: `/etc/piguard/config.yaml` (dev: `configs/default.yaml`). Environment variables are expanded at load time (e.g., `${PIGUARD_TELEGRAM_TOKEN}`). At least one notification channel must be enabled or `config.Validate()` returns an error.
@@ -72,6 +84,11 @@ Config file: `/etc/piguard/config.yaml` (dev: `configs/default.yaml`). Environme
 2. **Notifier**: Create a file in `internal/notifiers/`, implement the `Notifier` interface, add config fields to `internal/config/config.go`, and register in `daemon.New()`.
 
 New `EventType` constants belong in `pkg/models/events.go`.
+
+## Gotchas
+
+- **Linux-only watchers**: `NetlinkWatcher` and `FileIntegrityWatcher` (inotify) compile to no-ops on non-Linux platforms via `inotify_stub.go` / the `_linux.go` filename suffix. Running `make dev` locally on macOS will omit these watchers silently.
+- **`piguard setup` writes two files**: secrets go to `/etc/piguard/env` (mode 0600, loaded by systemd `EnvironmentFile`); non-secrets (ntfy topic/server) are written directly into the YAML config.
 
 ## Deployment
 

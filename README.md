@@ -126,7 +126,7 @@ make deploy-pi PI_HOST=other-pi  # override host
 - [x] **v0.2** — Docker container event monitoring (start/stop/crash/unhealthy)
 - [x] **v0.3** — Telegram bot Docker control (stop/restart/fix/logs/remove/prune); NetworkScanWatcher (ARP-based new device detection)
 - [ ] **v0.4** — System storage management via Telegram: Docker image/volume pruning, apt cache cleanup, disk usage reports
-- [ ] **v0.5** — `piguard doctor` CLI command: health-check of installation, config, dependencies, and installed security tools (ClamAV, rkhunter, Docker, iptables)
+- [ ] **v0.5** — `piguard doctor` CLI command: health-check of installation, config, dependencies, and installed security tools (ClamAV, rkhunter, Docker, iptables); Telegram `/daemon` command to restart or stop the PiGuard service remotely
 - [ ] **v0.6** — Auto-update support: scheduled `apt upgrade` + clean with Telegram confirmation and status reporting
 - [ ] **v0.7** — Embedded web dashboard
 - [ ] **v0.8** — Smart baselines with learning mode
