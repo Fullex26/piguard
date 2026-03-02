@@ -1,9 +1,21 @@
 BINARY := piguard
-VERSION := 0.1.0
-COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "dev")
-LDFLAGS := -ldflags "-s -w -X github.com/Fullex26/piguard/internal/daemon.Version=$(VERSION)-$(COMMIT)"
+# Build version is derived from Git tags to avoid drift with GitHub releases.
+# Examples:
+#   v0.3.0 tag on HEAD     -> 0.3.0
+#   2 commits after v0.3.0 -> 0.3.0-2-g<sha>
+RAW_VERSION := $(shell git describe --tags --dirty --always --match 'v[0-9]*' 2>/dev/null || echo "dev")
+VERSION := $(patsubst v%,%,$(RAW_VERSION))
+LDFLAGS := -ldflags "-s -w -X github.com/Fullex26/piguard/internal/daemon.Version=$(VERSION)"
 
-.PHONY: build build-pi build-all test lint vuln clean install deploy-pi
+.PHONY: build build-pi build-all test lint vuln clean install deploy-pi version check-version
+
+# Print the build version derived from git metadata
+version:
+	@echo $(VERSION)
+
+# Ensure version metadata can be resolved from git context
+check-version:
+	@test "$(VERSION)" != "" && test "$(VERSION)" != "dev" || (echo "version metadata unavailable" && exit 1)
 
 # Build for current platform
 build:

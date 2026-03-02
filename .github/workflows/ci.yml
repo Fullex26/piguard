@@ -60,5 +60,8 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Validate version metadata
+        run: make check-version
+
       - name: Build all targets
         run: make build-all

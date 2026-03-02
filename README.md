@@ -106,6 +106,9 @@ cd piguard
 # Build for current platform
 make build
 
+# Show build version derived from latest git tag
+make version
+
 # Cross-compile for Pi 5 (ARM64)
 make build-pi
 
