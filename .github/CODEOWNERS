@@ -1,0 +1,17 @@
+# Default owner
+* @Fullex26
+
+# Core runtime and safety-critical paths
+/internal/watchers/ @Fullex26
+/internal/notifiers/ @Fullex26
+/internal/daemon/ @Fullex26
+/internal/config/ @Fullex26
+
+# Release and CI
+/.github/workflows/ @Fullex26
+/Makefile @Fullex26
+/.goreleaser.yaml @Fullex26
+
+# User-facing docs and defaults
+/README.md @Fullex26
+/configs/ @Fullex26
