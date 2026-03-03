@@ -24,9 +24,61 @@ checksum:
   name_template: "checksums.txt"
 
 changelog:
+  use: conventional_commits
   sort: asc
+  groups:
+    - title: "⚠️ Breaking Changes"
+      regexp: '^.*!:.*$|^.*BREAKING CHANGE.*$'
+      order: 0
+    - title: "🚀 Features"
+      regexp: '^feat(\(.+\))?!?:.*$'
+      order: 1
+    - title: "🐛 Bug Fixes"
+      regexp: '^fix(\(.+\))?!?:.*$'
+      order: 2
+    - title: "🔒 Security"
+      regexp: '^sec(\(.+\))?!?:.*$'
+      order: 3
+    - title: "🧹 Maintenance"
+      regexp: '^(chore|refactor|perf|build)(\(.+\))?!?:.*$'
+      order: 4
+    - title: "📖 Documentation"
+      regexp: '^docs(\(.+\))?!?:.*$'
+      order: 5
   filters:
     exclude:
-      - "^docs:"
       - "^test:"
       - "^ci:"
+      - "Merge pull request"
+      - "Merge branch"
+
+release:
+  header: |
+    ## Installation / Upgrade
+
+    Download the binary for your platform, place it at `/usr/local/bin/piguard`, and restart the service:
+
+    ```bash
+    sudo systemctl stop piguard
+    sudo mv piguard-linux-arm64 /usr/local/bin/piguard
+    sudo chmod 755 /usr/local/bin/piguard
+    sudo systemctl start piguard
+    piguard version
+    ```
+
+    Or use the automated deploy from your dev machine:
+
+    ```bash
+    make deploy-pi
+    ```
+
+    ## Rollback
+
+    Download the previous release binary from the [Releases page](https://github.com/Fullex26/piguard/releases) and repeat the steps above with that binary. The SQLite event store at `/var/lib/piguard/events.db` is forward-compatible and does not need to be reset.
+
+    > **Breaking changes?** See the `⚠️ Breaking Changes` section above and [DEPRECATION.md](https://github.com/Fullex26/piguard/blob/main/DEPRECATION.md) for migration notes.
+
+  footer: |
+    **Checksums** are provided in `checksums.txt` for binary integrity verification.
+
+    Full changelog: https://github.com/Fullex26/piguard/blob/main/CHANGELOG.md

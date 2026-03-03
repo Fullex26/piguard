@@ -5,15 +5,24 @@ updates:
     directory: /
     schedule:
       interval: weekly
+      day: monday
     open-pull-requests-limit: 5
     labels:
-      - dependencies
+      - chore
+    groups:
+      security-patches:
+        applies-to: security-updates
+        patterns: ["*"]
+    ignore:
+      # Only auto-update patch and minor; major version bumps need manual review
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+      day: monday
     open-pull-requests-limit: 5
     labels:
-      - dependencies
-      - ci
+      - chore
