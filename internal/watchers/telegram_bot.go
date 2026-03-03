@@ -169,6 +169,8 @@ func (w *TelegramBotWatcher) handleCommand(text string) {
 		response = w.cmdIP()
 	case "/services":
 		response = w.cmdServices()
+	case "/storage":
+		response = w.cmdStorageRouter(parts)
 	case "/reboot":
 		response = w.cmdReboot(parts)
 	default:
@@ -222,6 +224,13 @@ func (w *TelegramBotWatcher) cmdHelp() string {
 /docker remove &lt;name&gt; CONFIRM — Force-remove a container
 /docker prune CONFIRM — Remove all stopped containers
 /services — Running services
+
+<b>Storage</b>
+/storage — Disk + Docker space report
+/storage images CONFIRM — Prune unused Docker images
+/storage volumes CONFIRM — Prune unused Docker volumes
+/storage apt CONFIRM — Clean apt package cache
+/storage all CONFIRM — Run all pruning operations
 
 <b>Danger zone</b>
 /reboot CONFIRM — Reboot the Pi`
@@ -499,6 +508,158 @@ func (w *TelegramBotWatcher) cmdDockerPrune(args []string) string {
 	}
 	return fmt.Sprintf("🧹 <b>Docker pruned:</b>\n<code>%s</code>",
 		truncate(html.EscapeString(strings.TrimSpace(string(out))), 800))
+}
+
+// cmdStorageRouter dispatches /storage subcommands.
+// With no subcommand it shows the disk + Docker usage report.
+func (w *TelegramBotWatcher) cmdStorageRouter(parts []string) string {
+	if len(parts) < 2 {
+		return w.cmdStorageReport()
+	}
+	args := parts[2:]
+	switch strings.ToLower(parts[1]) {
+	case "images":
+		return w.cmdStorageImages(args)
+	case "volumes":
+		return w.cmdStorageVolumes(args)
+	case "apt":
+		return w.cmdStorageApt(args)
+	case "all":
+		return w.cmdStorageAll(args)
+	default:
+		return w.cmdStorageReport() + "\n\n<i>Usage: /storage [images|volumes|apt|all] CONFIRM</i>"
+	}
+}
+
+func (w *TelegramBotWatcher) cmdStorageReport() string {
+	var b strings.Builder
+	b.WriteString("💾 <b>Storage Report</b>\n\n")
+
+	// Root filesystem
+	out, err := exec.Command("df", "-h", "/").Output()
+	if err == nil {
+		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+		if len(lines) >= 2 {
+			fields := strings.Fields(lines[1])
+			if len(fields) >= 5 {
+				percent, _ := strconv.Atoi(strings.TrimSuffix(fields[4], "%"))
+				bar := progressBar(percent)
+				b.WriteString(fmt.Sprintf("<b>Root (/)</b>\n%s %s used of %s (free: %s)\n\n",
+					bar, fields[2], fields[1], fields[3]))
+			}
+		}
+	}
+
+	// Docker space breakdown
+	out, err = exec.Command("docker", "system", "df").Output()
+	if err != nil {
+		b.WriteString("🐳 Docker: not available\n")
+	} else {
+		b.WriteString("<b>Docker layers</b>\n<code>")
+		b.WriteString(html.EscapeString(strings.TrimSpace(string(out))))
+		b.WriteString("</code>\n")
+	}
+
+	b.WriteString("\n<i>To reclaim space: /storage images|volumes|apt|all CONFIRM</i>")
+	return b.String()
+}
+
+func (w *TelegramBotWatcher) cmdStorageImages(args []string) string {
+	if len(args) == 0 || strings.ToUpper(args[len(args)-1]) != "CONFIRM" {
+		return "⚠️ <b>Prune unused Docker images</b> — removes all images not referenced by a container.\n\nSend: /storage images CONFIRM"
+	}
+	w.sendReply("🧹 Pruning Docker images...")
+	out, err := exec.Command("docker", "image", "prune", "-af").CombinedOutput()
+	if err != nil {
+		return fmt.Sprintf("❌ Image prune failed: %s", truncate(html.EscapeString(strings.TrimSpace(string(out))), 500))
+	}
+	return fmt.Sprintf("🧹 <b>Images pruned:</b>\n<code>%s</code>",
+		truncate(html.EscapeString(strings.TrimSpace(string(out))), 800))
+}
+
+func (w *TelegramBotWatcher) cmdStorageVolumes(args []string) string {
+	if len(args) == 0 || strings.ToUpper(args[len(args)-1]) != "CONFIRM" {
+		return "⚠️ <b>Prune unused Docker volumes</b> — removes volumes not attached to any container.\n\nSend: /storage volumes CONFIRM"
+	}
+	w.sendReply("🧹 Pruning Docker volumes...")
+	out, err := exec.Command("docker", "volume", "prune", "-f").CombinedOutput()
+	if err != nil {
+		return fmt.Sprintf("❌ Volume prune failed: %s", truncate(html.EscapeString(strings.TrimSpace(string(out))), 500))
+	}
+	return fmt.Sprintf("🧹 <b>Volumes pruned:</b>\n<code>%s</code>",
+		truncate(html.EscapeString(strings.TrimSpace(string(out))), 800))
+}
+
+func (w *TelegramBotWatcher) cmdStorageApt(args []string) string {
+	if len(args) == 0 || strings.ToUpper(args[len(args)-1]) != "CONFIRM" {
+		return "⚠️ <b>Clean apt cache</b> — runs <code>apt-get clean &amp;&amp; apt-get autoremove -y</code>.\n\nSend: /storage apt CONFIRM"
+	}
+	w.sendReply("🧹 Cleaning apt cache...")
+	// apt-get clean never fails; apt-get autoremove may exit non-zero on warnings
+	cleanOut, _ := exec.Command("apt-get", "clean").CombinedOutput()
+	removeOut, removeErr := exec.Command("apt-get", "autoremove", "-y").CombinedOutput()
+
+	var b strings.Builder
+	b.WriteString("🧹 <b>apt cache cleaned</b>\n")
+	if len(strings.TrimSpace(string(cleanOut))) > 0 {
+		b.WriteString(fmt.Sprintf("<code>%s</code>\n", truncate(html.EscapeString(strings.TrimSpace(string(cleanOut))), 300)))
+	}
+	if removeErr != nil {
+		b.WriteString(fmt.Sprintf("⚠️ autoremove: <code>%s</code>", truncate(html.EscapeString(strings.TrimSpace(string(removeOut))), 400)))
+	} else {
+		b.WriteString(fmt.Sprintf("✅ autoremove: <code>%s</code>", truncate(html.EscapeString(strings.TrimSpace(string(removeOut))), 400)))
+	}
+	return b.String()
+}
+
+func (w *TelegramBotWatcher) cmdStorageAll(args []string) string {
+	if len(args) == 0 || strings.ToUpper(args[len(args)-1]) != "CONFIRM" {
+		return "⚠️ <b>Full storage cleanup</b> — prunes Docker images, volumes, and apt cache.\n\nSend: /storage all CONFIRM"
+	}
+	w.sendReply("🧹 Running full storage cleanup...")
+
+	var b strings.Builder
+	b.WriteString("🧹 <b>Full storage cleanup</b>\n\n")
+
+	// Images
+	imgOut, imgErr := exec.Command("docker", "image", "prune", "-af").CombinedOutput()
+	if imgErr != nil {
+		b.WriteString(fmt.Sprintf("❌ Images: %s\n", truncate(html.EscapeString(strings.TrimSpace(string(imgOut))), 200)))
+	} else {
+		// Extract the "Total reclaimed space" line if present
+		reclaimed := extractReclaimedLine(string(imgOut))
+		b.WriteString(fmt.Sprintf("✅ Images pruned%s\n", reclaimed))
+	}
+
+	// Volumes
+	volOut, volErr := exec.Command("docker", "volume", "prune", "-f").CombinedOutput()
+	if volErr != nil {
+		b.WriteString(fmt.Sprintf("❌ Volumes: %s\n", truncate(html.EscapeString(strings.TrimSpace(string(volOut))), 200)))
+	} else {
+		reclaimed := extractReclaimedLine(string(volOut))
+		b.WriteString(fmt.Sprintf("✅ Volumes pruned%s\n", reclaimed))
+	}
+
+	// apt
+	exec.Command("apt-get", "clean").Run() //nolint:errcheck
+	removeOut, removeErr := exec.Command("apt-get", "autoremove", "-y").CombinedOutput()
+	if removeErr != nil {
+		b.WriteString(fmt.Sprintf("⚠️ apt autoremove: %s\n", truncate(html.EscapeString(strings.TrimSpace(string(removeOut))), 200)))
+	} else {
+		b.WriteString("✅ apt cache cleaned\n")
+	}
+
+	return b.String()
+}
+
+// extractReclaimedLine returns " — <Total reclaimed space: X>" if found in docker output.
+func extractReclaimedLine(output string) string {
+	for _, line := range strings.Split(output, "\n") {
+		if strings.Contains(line, "Total reclaimed space") {
+			return " — " + strings.TrimSpace(line)
+		}
+	}
+	return ""
 }
 
 func (w *TelegramBotWatcher) cmdDisk() string {
