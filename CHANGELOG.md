@@ -7,6 +7,21 @@ PiGuard uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.4.0] — 2026-03-03
+
+### Added
+- **Telegram storage management** — `/storage` command tree for reclaiming disk space:
+  - `/storage` — disk usage report: root filesystem + Docker layer/image/volume/build-cache breakdown (`docker system df`)
+  - `/storage images CONFIRM` — `docker image prune -af`; removes all unused images and reports space reclaimed
+  - `/storage volumes CONFIRM` — `docker volume prune -f`; removes unused volumes
+  - `/storage apt CONFIRM` — `apt-get clean && apt-get autoremove -y`; clears the apt package cache
+  - `/storage all CONFIRM` — runs all three pruning operations in sequence
+- Updated `/help` command with **Storage** section listing all `/storage` subcommands
+
+[0.4.0]: https://github.com/Fullex26/piguard/releases/tag/v0.4.0
+
+---
+
 ## [0.3.0] — 2026-02-28
 
 ### Added

@@ -1,5 +1,10 @@
 # 🛡️ PiGuard
 
+[![CI](https://github.com/Fullex26/piguard/actions/workflows/ci.yml/badge.svg)](https://github.com/Fullex26/piguard/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Fullex26/piguard)](https://github.com/Fullex26/piguard/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/Fullex26/piguard)](go.mod)
+
 **Lightweight, event-driven host security monitor for Raspberry Pi & ARM SBCs.**
 
 PiGuard watches your Pi in real-time and alerts you the moment something changes — a new port opens, firewall rules drift, or a container goes unhealthy. Alerts go to Telegram, Discord, ntfy.sh, or any webhook.
@@ -37,6 +42,7 @@ sudo systemctl enable --now piguard
 - **System**: Disk, memory, CPU temperature (Pi thermal sensor)
 - **File integrity**: Detects changes to critical system files (`/etc/passwd`, SSH config, sudoers, crontab, etc.)
 - **Docker containers**: Alerts on container start, crash (non-zero exit), graceful stop (opt-in), and health transitions; interactive Telegram controls (stop/restart/fix/logs/remove/prune)
+- **Storage management**: Telegram `/storage` command — disk usage report, Docker image/volume pruning, apt cache cleanup, all with confirmation guards
 - **Network devices**: Detects new/unknown devices on the local network via ARP neighbour table (`ip neigh show`)
 - **Security tools**: Tails ClamAV and rkhunter logs — fires Critical alerts on malware detections or rootkit warnings
 - **Daily summary**: 8am digest with full system status
@@ -128,12 +134,14 @@ make deploy-pi PI_HOST=other-pi  # override host
 - [x] **v0.1** — Port monitoring, firewall drift, system health, file integrity, ClamAV/rkhunter alerts, Telegram/Discord/ntfy/webhook notifiers
 - [x] **v0.2** — Docker container event monitoring (start/stop/crash/unhealthy)
 - [x] **v0.3** — Telegram bot Docker control (stop/restart/fix/logs/remove/prune); NetworkScanWatcher (ARP-based new device detection)
-- [ ] **v0.4** — System storage management via Telegram: Docker image/volume pruning, apt cache cleanup, disk usage reports
-- [ ] **v0.5** — `piguard doctor` CLI command: health-check of installation, config, dependencies, and installed security tools (ClamAV, rkhunter, Docker, iptables); Telegram `/daemon` command to restart or stop the PiGuard service remotely
-- [ ] **v0.6** — Auto-update support: scheduled `apt upgrade` + clean with Telegram confirmation and status reporting
-- [ ] **v0.7** — Embedded web dashboard
-- [ ] **v0.8** — Smart baselines with learning mode
+- [x] **v0.4** — System storage management via Telegram: Docker image/volume pruning, apt cache cleanup, disk usage reports
+- [ ] **v0.5** — Services dashboard + connectivity monitoring: Telegram `/services` enhanced with running Docker container port bindings and access URLs; `ConnectivityWatcher` detecting internet outages with recovery duration alerts
+- [ ] **v0.6** — `piguard doctor` CLI command: health-check of installation, config, dependencies, and installed security tools (ClamAV, rkhunter, Docker, iptables); Telegram `/daemon` command to restart or stop the PiGuard service remotely
+- [ ] **v0.7** — Auto-update support: scheduled `apt upgrade` + clean with Telegram confirmation and status reporting
+- [ ] **v0.8** — Embedded web dashboard
+- [ ] **v0.9** — Smart baselines with learning mode
 - [ ] **v1.0** — Plugin system, multi-host support, Prometheus metrics
+- Far future: Built-in AI agent for intelligent anomaly correlation and natural-language security Q&A
 
 ## License
 
