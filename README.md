@@ -1,5 +1,10 @@
 # 🛡️ PiGuard
 
+[![CI](https://github.com/Fullex26/piguard/actions/workflows/ci.yml/badge.svg)](https://github.com/Fullex26/piguard/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Fullex26/piguard)](https://github.com/Fullex26/piguard/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/Fullex26/piguard)](go.mod)
+
 **Lightweight, event-driven host security monitor for Raspberry Pi & ARM SBCs.**
 
 PiGuard watches your Pi in real-time and alerts you the moment something changes — a new port opens, firewall rules drift, or a container goes unhealthy. Alerts go to Telegram, Discord, ntfy.sh, or any webhook.
@@ -37,6 +42,7 @@ sudo systemctl enable --now piguard
 - **System**: Disk, memory, CPU temperature (Pi thermal sensor)
 - **File integrity**: Detects changes to critical system files (`/etc/passwd`, SSH config, sudoers, crontab, etc.)
 - **Docker containers**: Alerts on container start, crash (non-zero exit), graceful stop (opt-in), and health transitions; interactive Telegram controls (stop/restart/fix/logs/remove/prune)
+- **Storage management**: Telegram `/storage` command — disk usage report, Docker image/volume pruning, apt cache cleanup, all with confirmation guards
 - **Network devices**: Detects new/unknown devices on the local network via ARP neighbour table (`ip neigh show`)
 - **Security tools**: Tails ClamAV and rkhunter logs — fires Critical alerts on malware detections or rootkit warnings
 - **Daily summary**: 8am digest with full system status
