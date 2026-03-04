@@ -1,9 +1,9 @@
 # 🛡️ PiGuard
 
-[![CI](https://github.com/Fullex26/piguard/actions/workflows/ci.yml/badge.svg)](https://github.com/Fullex26/piguard/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Fullex26/piguard)](https://github.com/Fullex26/piguard/releases/latest)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/Fullex26/piguard)](go.mod)
+[![Build](https://img.shields.io/github/actions/workflow/status/Fullex26/piguard/ci.yml?branch=main&style=for-the-badge&label=BUILD)](https://github.com/Fullex26/piguard/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Fullex26/piguard?style=for-the-badge&label=RELEASE)](https://github.com/Fullex26/piguard/releases/latest)
+[![Stars](https://img.shields.io/github/stars/Fullex26/piguard?style=for-the-badge&label=STARS)](https://github.com/Fullex26/piguard/stargazers)
+[![License](https://img.shields.io/github/license/Fullex26/piguard?style=for-the-badge&label=LICENSE)](LICENSE)
 
 **Lightweight, event-driven host security monitor for Raspberry Pi & ARM SBCs.**
 

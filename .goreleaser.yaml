@@ -24,7 +24,6 @@ checksum:
   name_template: "checksums.txt"
 
 changelog:
-  use: conventional_commits
   sort: asc
   groups:
     - title: "⚠️ Breaking Changes"
