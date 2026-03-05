@@ -1,114 +1,100 @@
-# v0.6 — Auto-Updater Plan
+# v0.7 — Security Hardening + UX Polish
 
-## Design Decisions
+Four features that strengthen PiGuard's security coverage and improve the Telegram bot experience.
 
-1. **No cron library** — Go's stdlib `time` package is sufficient. The daemon already uses `time.After` for daily summaries (`runDailySummary` in daemon.go). The auto-updater follows the same pattern: check every minute, fire when `HH:MM` + weekday match.
+---
 
-2. **Schedule format**: simple `day_of_week` + `time` fields rather than cron syntax. Keeps config readable, no new dependency. Example: `day: "sunday"`, `time: "03:00"`.
+## 1. AuthLogWatcher — SSH brute force + failed sudo detection
 
-3. **Watcher, not daemon goroutine** — implemented as an `AutoUpdateWatcher` following the established pattern (Base, injectable exec function, Start loop with ticker). This keeps it consistent with all other watchers and makes it testable.
+**Why:** `EventSSHBruteForce` is defined in `events.go` but nothing fires it. SSH brute force is the most common real threat on an internet-facing Pi.
 
-4. **Telegram commands**:
-   - `/updates` — check what's available (`apt list --upgradable`) without applying
-   - `/update CONFIRM` — trigger an on-demand upgrade from your phone
+**Design:**
+- New watcher: `internal/watchers/auth_log.go`
+- Tails `/var/log/auth.log` (configurable path)
+- Detects patterns:
+  - `Failed password for .* from <IP>` — count per IP in a sliding window
+  - `COMMAND.*sudo` with `authentication failure` — failed sudo attempt
+  - `Accepted publickey` / `Accepted password` — successful login (Info, opt-in)
+- Fires `ssh.bruteforce` (Critical) when failed count from a single IP exceeds threshold (default: 5 in 5 minutes)
+- New event type: `EventSudoFailure` ("sudo.failure", Warning)
+- Config section: `auth_log: { enabled, path, brute_force_threshold, brute_force_window }`
+- Injectable `readFn` for testability (same pattern as SecToolsWatcher log tailing)
+- Linux-only: uses inotify or polling; stub on non-Linux
 
-5. **Reboot handling**: after upgrade, check `/var/run/reboot-required`. If present, alert with a warning message suggesting `/reboot CONFIRM`. No auto-reboot (too risky as a default).
+**Tests:**
+- Line parsing (table-driven: failed password, accepted key, sudo failure, noise lines)
+- Brute force threshold (5 failures from same IP triggers, 4 doesn't)
+- Window expiry (old failures age out)
+- Different IPs don't cross-contaminate counts
 
-6. **Event types**: `EventSystemUpdated` (Info, successful upgrade with package count), `EventSystemUpdateFailed` (Warning, apt returned error).
+## 2. Quiet Hours Enforcement
 
-## Files to Create
+**Why:** `quiet_hours` config (start/end) exists but is never checked in the notification path.
 
-### 1. `internal/watchers/auto_update.go`
+**Design:**
+- Add `isQuietHour(now time.Time) bool` to `internal/daemon/daemon.go`
+- In `handleEvent()`, after dedup check: if `isQuietHour(now)` and severity is not Critical, skip notification (still save to SQLite)
+- Critical events always bypass quiet hours (same philosophy as dedup bypass)
+- Log suppressed notifications at Debug level
 
-```go
-type AutoUpdateWatcher struct {
-    Base
-    dayOfWeek time.Weekday
-    timeHHMM  string // "03:00"
-    runApt    func(args ...string) (string, error) // injectable for tests
-}
-```
+**Tests:**
+- Time within quiet hours (23:30 with 23:00-07:00) — suppressed
+- Time outside quiet hours (12:00) — not suppressed
+- Critical during quiet hours — not suppressed
+- Wrap-around midnight logic (start > end means overnight window)
 
-- `NewAutoUpdateWatcher(cfg, bus)` — parses config, sets `runApt` to real `exec.Command`
-- `Start(ctx)` — ticker every 60s, checks if `now.Weekday() == dayOfWeek && HH:MM == timeHHMM`
-- `runUpgrade()` — runs `apt-get update`, then `apt-get upgrade -y`, parses output for upgraded package count, publishes event. Checks `/var/run/reboot-required` after.
-- Helper: `parseUpgradeCount(output string) int` — extracts count from apt output ("X upgraded, Y newly installed...")
+## 3. Telegram Inline Keyboard Buttons
 
-### 2. `internal/watchers/auto_update_test.go`
+**Why:** Typing `/reboot CONFIRM` or `/docker remove nginx CONFIRM` is clunky on mobile. Inline keyboards are a native Telegram feature that makes dangerous actions safer and easier.
 
-- TestAutoUpdateWatcher_Name
-- TestAutoUpdateWatcher_ParseUpgradeCount (table-driven: "3 upgraded", "0 upgraded", empty, etc.)
-- TestAutoUpdateWatcher_RunUpgrade_Success (stub runApt, verify Info event with package count)
-- TestAutoUpdateWatcher_RunUpgrade_Failure (stub runApt error, verify Warning event)
-- TestAutoUpdateWatcher_RunUpgrade_RebootRequired (stub runApt + reboot-required file exists)
-- TestAutoUpdateWatcher_ScheduleMatch (verify weekday+time matching logic)
-- TestAutoUpdateWatcher_CheckAvailable (verify the "check only" path used by `/updates`)
+**Design:**
+- Use Telegram `sendMessage` with `reply_markup` containing `InlineKeyboardMarkup`
+- Confirmation flow:
+  1. User sends `/reboot` → bot replies with warning text + [Confirm Reboot] button
+  2. User taps button → bot receives `callback_query` with data like `reboot:confirm`
+  3. Bot executes action and sends result
+- Add callback query handling to `TelegramBotWatcher.poll()` (register `callback_query` in `allowed_updates`)
+- Commands to convert: `/reboot`, `/update`, `/docker remove`, `/docker prune`, `/storage images|volumes|apt|all`
+- Data format: `action:arg1:arg2` (e.g., `docker_remove:nginx`, `storage:images`)
+- `answerCallbackQuery` call to dismiss the loading spinner
 
-## Files to Modify
+**Implementation notes:**
+- New helper: `sendReplyWithKeyboard(text string, buttons [][]InlineButton)`
+- New struct: `InlineButton { Text, CallbackData string }`
+- Callback data is limited to 64 bytes by Telegram — use short codes
+- Security: validate callback chat ID matches configured chat ID
 
-### 3. `pkg/models/events.go`
-Add:
-```go
-EventSystemUpdated     EventType = "system.updated"       // Successful apt upgrade
-EventSystemUpdateFailed EventType = "system.update_failed" // apt upgrade error
-```
+## 4. Enhanced Weekly Trend Reports
 
-### 4. `internal/config/config.go`
-Add:
-```go
-type AutoUpdateConfig struct {
-    Enabled   bool   `yaml:"enabled"`
-    DayOfWeek string `yaml:"day_of_week"` // "sunday", "monday", etc. or "daily"
-    Time      string `yaml:"time"`        // "03:00" (24h format)
-}
-```
-Add field to `Config` struct: `AutoUpdate AutoUpdateConfig \`yaml:"auto_update"\``
-Add to `DefaultConfig()`:
-```go
-AutoUpdate: AutoUpdateConfig{
-    Enabled:   false, // opt-in — user must explicitly enable
-    DayOfWeek: "sunday",
-    Time:      "03:00",
-},
-```
+**Why:** The daily summary is a point-in-time snapshot. A weekly report shows whether things are getting better or worse.
 
-### 5. `internal/daemon/daemon.go`
-Register:
-```go
-if cfg.AutoUpdate.Enabled {
-    d.watchers = append(d.watchers, watchers.NewAutoUpdateWatcher(cfg, bus))
-}
-```
+**Design:**
+- New config field: `alerts.weekly_report` (default: `"sunday:20:00"`, empty = disabled)
+- Query `store.GetEventCountByType(days int) map[EventType]int`
+- New store method: `GetEventCountByType(days int)` — `SELECT type, COUNT(*) FROM events WHERE timestamp > ? GROUP BY type`
+- Report includes:
+  - Total events this week vs last week (trend arrow)
+  - Top 3 event types by frequency
+  - Uptime percentage (calculate from connectivity events or `/proc/uptime`)
+  - Update status (last auto-update result, packages pending)
+- Format as Telegram HTML with a clean summary layout
+- Fires as a `summary.weekly` event (new EventType)
 
-### 6. `internal/watchers/telegram_bot.go`
-Add to `handleCommand` switch:
-```go
-case "/updates":
-    response = w.cmdUpdates()
-case "/update":
-    response = w.cmdUpdate(parts)
-```
+---
 
-Add `cmdUpdates()` — runs `apt list --upgradable 2>/dev/null`, formats as Telegram HTML.
-Add `cmdUpdate(parts)` — requires CONFIRM guard, runs `apt-get update && apt-get upgrade -y`, returns summary with package count.
+## Files Summary
 
-Update `cmdHelp()` to include the new commands under a "System" or new "Updates" section.
+### New files
+- `internal/watchers/auth_log.go` + `auth_log_test.go`
 
-### 7. `configs/default.yaml`
-Add:
-```yaml
-# ── Auto-update ──
-auto_update:
-  enabled: false
-  day_of_week: "sunday"  # or "daily" for every day
-  time: "03:00"          # 24-hour format
-```
+### Modified files
+- `pkg/models/events.go` — add `EventSudoFailure`, `EventWeeklySummary`, `EventSSHLogin`
+- `internal/config/config.go` — add `AuthLogConfig`, `weekly_report` field
+- `internal/daemon/daemon.go` — register AuthLogWatcher, add quiet hours check, add weekly report scheduler
+- `internal/watchers/telegram_bot.go` — callback query handling, inline keyboard helpers, `/report` command
+- `internal/store/store.go` — add `GetEventCountByType(days)`
+- `configs/default.yaml` — add `auth_log:` and `weekly_report:` sections
+- `internal/doctor/doctor.go` — add auth log file check
 
-### 8. `internal/doctor/doctor.go`
-Add `checkAutoUpdate()` — if enabled, verify `apt-get` is available.
-
-### 9. Release checklist files
-- CHANGELOG.md — add v0.7.0 section
-- README.md — mark v0.7 [x], update "What It Monitors"
-- CLAUDE.md — no new watcher to list (AutoUpdateWatcher is a maintenance watcher, not a security monitor), but add `/update` and `/updates` to CLI subcommands if relevant
-- Todo.txt — clear the auto-updater item
+### Release checklist
+- CHANGELOG.md, README.md, CLAUDE.md, Todo.txt — standard checklist
