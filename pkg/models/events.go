@@ -60,6 +60,8 @@ const (
 	EventConnectivityLost     EventType = "connectivity.lost"      // All probe hosts unreachable
 	EventConnectivityRestored EventType = "connectivity.restored"   // Connectivity returned after outage
 	EventContainerUpdated     EventType = "docker.container_updated" // Container replaced with new image (Watchtower)
+	EventSystemUpdated        EventType = "system.updated"           // Successful apt upgrade
+	EventSystemUpdateFailed   EventType = "system.update_failed"     // apt upgrade error
 )
 
 // PortInfo describes a listening port with full context

@@ -129,6 +129,12 @@ func (r *Runner) Run() []CheckResult {
 		results = append(results, skip("Dependencies", "ip", "Network watcher disabled"))
 	}
 
+	if r.cfg != nil && r.cfg.AutoUpdate.Enabled {
+		results = append(results, r.checkAptGet())
+	} else {
+		results = append(results, skip("Dependencies", "apt-get", "Auto-update disabled"))
+	}
+
 	return results
 }
 
@@ -314,6 +320,18 @@ func (r *Runner) checkIP() CheckResult {
 		}
 	}
 	return CheckResult{Category: "Dependencies", Name: "ip", Status: StatusOK, Message: "Available"}
+}
+
+func (r *Runner) checkAptGet() CheckResult {
+	_, code := r.execFn("apt-get", "--version")
+	if code == -1 {
+		return CheckResult{
+			Category: "Dependencies", Name: "apt-get",
+			Status: StatusFail, Message: "Not found — auto-update will fail",
+			Fix: "Auto-update requires a Debian/Ubuntu-based system with apt-get",
+		}
+	}
+	return CheckResult{Category: "Dependencies", Name: "apt-get", Status: StatusOK, Message: "Available"}
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────

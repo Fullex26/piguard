@@ -47,6 +47,7 @@ sudo systemctl enable --now piguard
 - **Security tools**: Tails ClamAV and rkhunter logs — fires Critical alerts on malware detections or rootkit warnings
 - **Connectivity**: Polls configurable TCP probe hosts (default: `8.8.8.8:53`, `1.1.1.1:53`) every 30 s; fires Critical alert on outage and Info alert on recovery with outage duration
 - **Services dashboard**: Telegram `/services` shows running systemd services plus Docker containers with host port bindings as local access URLs
+- **Auto-update**: Scheduled `apt upgrade` with configurable day/time; Telegram `/updates` to check and `/update CONFIRM` to trigger on-demand; alerts on success/failure and reboot-required
 - **Daily summary**: 8am digest with full system status
 
 ## Works Best With
@@ -139,7 +140,7 @@ make deploy-pi PI_HOST=other-pi  # override host
 - [x] **v0.3** — Telegram bot Docker control (stop/restart/fix/logs/remove/prune); NetworkScanWatcher (ARP-based new device detection)
 - [x] **v0.4** — System storage management via Telegram: Docker image/volume pruning, apt cache cleanup, disk usage reports
 - [x] **v0.5** — Services dashboard + connectivity monitoring + diagnostics: Telegram `/services` with Docker port URLs; `ConnectivityWatcher` for internet outage alerts; `piguard doctor` CLI + Telegram `/doctor` for installation health checks; Watchtower update detection; SQLITE_BUSY and dual-stack dedup fixes
-- [ ] **v0.6** — Auto-update support: scheduled `apt upgrade` + clean with Telegram confirmation and status reporting
+- [x] **v0.6** — Auto-update support: scheduled `apt upgrade` with Telegram `/updates` check and `/update CONFIRM` on-demand trigger; reboot-required detection
 - [ ] **v0.7** — Embedded web dashboard
 - [ ] **v0.8** — Smart baselines with learning mode
 - [ ] **v0.9** — Plugin system, multi-host support, Prometheus metrics

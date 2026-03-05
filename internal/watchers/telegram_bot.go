@@ -173,6 +173,10 @@ func (w *TelegramBotWatcher) handleCommand(text string) {
 		response = w.cmdServices()
 	case "/doctor":
 		response = w.cmdDoctor()
+	case "/updates":
+		response = w.cmdUpdates()
+	case "/update":
+		response = w.cmdUpdate(parts)
 	case "/storage":
 		response = w.cmdStorageRouter(parts)
 	case "/reboot":
@@ -235,6 +239,10 @@ func (w *TelegramBotWatcher) cmdHelp() string {
 /storage volumes CONFIRM — Prune unused Docker volumes
 /storage apt CONFIRM — Clean apt package cache
 /storage all CONFIRM — Run all pruning operations
+
+<b>Updates</b>
+/updates — Check available package upgrades
+/update CONFIRM — Run apt upgrade now
 
 <b>Diagnostics</b>
 /doctor — Check PiGuard installation health
@@ -1044,6 +1052,76 @@ func (w *TelegramBotWatcher) cmdReboot(parts []string) string {
 func (w *TelegramBotWatcher) cmdDoctor() string {
 	results := doctor.New(w.Cfg, store.DefaultDBPath).Run()
 	return doctor.RenderTelegram(results)
+}
+
+func (w *TelegramBotWatcher) cmdUpdates() string {
+	out, err := exec.Command("apt-get", "list", "--upgradable").CombinedOutput()
+	if err != nil {
+		return "❌ Failed to check for updates"
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	// First line is usually "Listing..."
+	var pkgs []string
+	for _, line := range lines {
+		if strings.Contains(line, "upgradable") {
+			pkgs = append(pkgs, line)
+		}
+	}
+
+	if len(pkgs) == 0 {
+		return "✅ <b>System up to date</b>\n\nNo packages available for upgrade."
+	}
+
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("📦 <b>%d package(s) upgradable</b>\n\n", len(pkgs)))
+	for _, p := range pkgs {
+		// Extract just the package name (before the /)
+		name := p
+		if idx := strings.Index(p, "/"); idx > 0 {
+			name = p[:idx]
+		}
+		b.WriteString(fmt.Sprintf("  • %s\n", html.EscapeString(name)))
+	}
+	b.WriteString("\nTo upgrade: /update CONFIRM")
+	return b.String()
+}
+
+func (w *TelegramBotWatcher) cmdUpdate(parts []string) string {
+	if len(parts) < 2 || strings.ToUpper(parts[1]) != "CONFIRM" {
+		return "⚠️ <b>System upgrade requires confirmation</b>\n\nThis will run <code>apt-get update && apt-get upgrade -y</code>.\n\nSend: /update CONFIRM"
+	}
+
+	w.sendReply("📦 Running system update... this may take a few minutes.")
+
+	// apt-get update
+	updateOut, err := exec.Command("apt-get", "update").CombinedOutput()
+	if err != nil {
+		return fmt.Sprintf("❌ <b>apt-get update failed</b>\n<code>%s</code>",
+			truncate(html.EscapeString(strings.TrimSpace(string(updateOut))), 500))
+	}
+
+	// apt-get upgrade -y
+	upgradeOut, err := exec.Command("apt-get", "upgrade", "-y").CombinedOutput()
+	if err != nil {
+		return fmt.Sprintf("❌ <b>apt-get upgrade failed</b>\n<code>%s</code>",
+			truncate(html.EscapeString(strings.TrimSpace(string(upgradeOut))), 500))
+	}
+
+	count := parseUpgradeCount(string(upgradeOut))
+	var b strings.Builder
+	if count > 0 {
+		b.WriteString(fmt.Sprintf("✅ <b>%d package(s) upgraded</b>\n", count))
+	} else {
+		b.WriteString("✅ <b>Already up to date</b>\n")
+	}
+
+	// Check reboot-required
+	if _, err := os.Stat("/var/run/reboot-required"); err == nil {
+		b.WriteString("\n⚠️ <b>Reboot required</b> — send /reboot CONFIRM")
+	}
+
+	return b.String()
 }
 
 // ── Helper functions ──
