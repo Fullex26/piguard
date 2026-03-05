@@ -1,4 +1,4 @@
-# v0.7 — Auto-Updater Plan
+# v0.6 — Auto-Updater Plan
 
 ## Design Decisions
 

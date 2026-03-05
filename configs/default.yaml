@@ -116,6 +116,12 @@ network:
   ignore_macs: []
   #   - "aa:bb:cc:dd:ee:ff"
 
+# ── Auto-update ──
+auto_update:
+  enabled: false
+  day_of_week: "sunday"  # or "daily" for every day
+  time: "03:00"          # 24-hour format
+
 # ── Connectivity monitoring ──
 connectivity:
   enabled: true

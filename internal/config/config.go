@@ -22,6 +22,7 @@ type Config struct {
 	SecurityTools   SecurityToolsConfig  `yaml:"security_tools"`
 	Network         NetworkConfig        `yaml:"network"`
 	Connectivity    ConnectivityConfig   `yaml:"connectivity"`
+	AutoUpdate      AutoUpdateConfig     `yaml:"auto_update"`
 }
 
 type NotificationConfig struct {
@@ -136,6 +137,12 @@ type NetworkConfig struct {
 	IgnoreMACs   []string `yaml:"ignore_macs"`    // MACs to never alert on
 }
 
+type AutoUpdateConfig struct {
+	Enabled   bool   `yaml:"enabled"`
+	DayOfWeek string `yaml:"day_of_week"` // "sunday", "monday", ... or "daily"
+	Time      string `yaml:"time"`        // "03:00" (24h format)
+}
+
 type ConnectivityConfig struct {
 	Enabled      bool     `yaml:"enabled"`
 	PollInterval string   `yaml:"poll_interval"` // default: "30s"
@@ -230,6 +237,11 @@ func DefaultConfig() *Config {
 			Enabled:      true,
 			PollInterval: "30s",
 			Hosts:        []string{"8.8.8.8:53", "1.1.1.1:53"},
+		},
+		AutoUpdate: AutoUpdateConfig{
+			Enabled:   false,
+			DayOfWeek: "sunday",
+			Time:      "03:00",
 		},
 	}
 }

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-PiGuard is a lightweight, event-driven host security monitor for Raspberry Pi and ARM SBCs, written in Go 1.22+. It watches for port changes, firewall drift, and system health issues, then sends alerts via Telegram, Discord, ntfy.sh, or webhooks.
+PiGuard is a lightweight, event-driven host security monitor for Raspberry Pi and ARM SBCs, written in Go 1.24+. It watches for port changes, firewall drift, and system health issues, then sends alerts via Telegram, Discord, ntfy.sh, or webhooks.
 
 ## Build Commands
 
@@ -63,6 +63,8 @@ Watchers → eventbus.Bus → Daemon subscriber → Deduplicator → Notifiers
 - `TelegramBotWatcher` — interactive two-way bot commands (registered as a watcher, not a notifier); supports `/docker` subcommands (stop/restart/fix/logs/remove/prune)
 - `DockerWatcher` — polls `docker ps` for container lifecycle events (start/crash/stop/unhealthy)
 - `NetworkScanWatcher` — polls `ip neigh show` for new/departed ARP neighbours; alerts on unknown devices
+- `ConnectivityWatcher` — polls TCP hosts on an interval; fires events when connectivity is lost or restored
+- `AutoUpdateWatcher` — scheduled `apt-get update && apt-get upgrade -y` on configurable day/time; publishes success/failure events; detects reboot-required
 
 ## CLI Subcommands
 
@@ -71,6 +73,7 @@ piguard run [--config PATH]   # Start daemon (default config: /etc/piguard/confi
 piguard status                # Show events from last 24 h (reads SQLite directly)
 piguard test                  # Fire a test notification to all configured channels
 piguard setup [--env-file PATH] # Interactive wizard — creates config YAML + /etc/piguard/env
+piguard doctor                # Check system prerequisites and configuration health
 piguard version               # Print version string
 ```
 
@@ -88,6 +91,7 @@ New `EventType` constants belong in `pkg/models/events.go`.
 ## Gotchas
 
 - **Linux-only watchers**: `NetlinkWatcher` and `FileIntegrityWatcher` (inotify) compile to no-ops on non-Linux platforms via `inotify_stub.go` / the `_linux.go` filename suffix. Running `make dev` locally on macOS will omit these watchers silently.
+- **`SystemWatcher` platform split**: Disk usage uses the same `init()` override pattern — `statfs_linux.go` registers the real `syscall.Statfs` implementation at startup; on non-Linux the default is a no-op stub.
 - **`piguard setup` writes two files**: secrets go to `/etc/piguard/env` (mode 0600, loaded by systemd `EnvironmentFile`); non-secrets (ntfy topic/server) are written directly into the YAML config.
 
 ## Deployment
@@ -104,5 +108,8 @@ PiGuard runs as a systemd service (`configs/piguard.service`). The install scrip
 4. **Todo.txt** — review the file; any items that are now captured in the roadmap or completed can be removed. New ideas should be turned into a versioned roadmap entry.
 5. **`make test && make build-all`** — all tests pass and all three cross-compile targets build cleanly.
 6. **CLAUDE.md** — update `Watchers currently implemented` if a new watcher was added.
+7. **Commit** — stage and commit all changes.
+8. **Branch + PR** — push to `release/vX.Y.Z` branch and open a PR (`main` is protected; direct pushes are rejected).
+9. **After merge** — checkout main, pull, `git tag -a vX.Y.Z -m "vX.Y.Z" && git push --tags`.
 
 Do **not** push or tag without completing this checklist.

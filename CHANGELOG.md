@@ -7,6 +7,21 @@ PiGuard uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.6.0] — 2026-03-05
+
+### Added
+- **AutoUpdateWatcher** — scheduled `apt-get update && apt-get upgrade -y` with configurable day-of-week and time (default: Sunday 03:00, disabled by default)
+  - Publishes `system.updated` (Info) on success with package count; escalates to Warning if `/var/run/reboot-required` exists
+  - Publishes `system.update_failed` (Warning) on apt errors
+  - New config section `auto_update` with `enabled`, `day_of_week` (or `"daily"`), and `time`
+- **Telegram `/updates`** — check available package upgrades without applying them
+- **Telegram `/update CONFIRM`** — trigger an on-demand system upgrade from your phone
+- **`piguard doctor`** now checks `apt-get` availability when auto-update is enabled
+
+[0.6.0]: https://github.com/Fullex26/piguard/releases/tag/v0.6.0
+
+---
+
 ## [0.5.0] — 2026-03-05
 
 ### Added
