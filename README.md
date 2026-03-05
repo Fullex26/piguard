@@ -48,6 +48,10 @@ sudo systemctl enable --now piguard
 - **Connectivity**: Polls configurable TCP probe hosts (default: `8.8.8.8:53`, `1.1.1.1:53`) every 30 s; fires Critical alert on outage and Info alert on recovery with outage duration
 - **Services dashboard**: Telegram `/services` shows running systemd services plus Docker containers with host port bindings as local access URLs
 - **Auto-update**: Scheduled `apt upgrade` with configurable day/time; Telegram `/updates` to check and `/update CONFIRM` to trigger on-demand; alerts on success/failure and reboot-required
+- **Auth log monitoring**: Watches `/var/log/auth.log` for SSH brute-force attempts (Critical alert on threshold), failed sudo authentication (Warning), and successful SSH logins (opt-in Info)
+- **Quiet hours**: Non-critical notifications suppressed during configurable window (default 23:00–07:00); Critical events always get through
+- **Weekly trend reports**: Automatic weekly summary with event breakdown and trend arrows; on-demand via Telegram `/report`
+- **Inline keyboard buttons**: Telegram destructive commands (reboot, update, docker prune, etc.) show tappable confirmation buttons
 - **Daily summary**: 8am digest with full system status
 
 ## Works Best With
@@ -141,9 +145,10 @@ make deploy-pi PI_HOST=other-pi  # override host
 - [x] **v0.4** — System storage management via Telegram: Docker image/volume pruning, apt cache cleanup, disk usage reports
 - [x] **v0.5** — Services dashboard + connectivity monitoring + diagnostics: Telegram `/services` with Docker port URLs; `ConnectivityWatcher` for internet outage alerts; `piguard doctor` CLI + Telegram `/doctor` for installation health checks; Watchtower update detection; SQLITE_BUSY and dual-stack dedup fixes
 - [x] **v0.6** — Auto-update support: scheduled `apt upgrade` with Telegram `/updates` check and `/update CONFIRM` on-demand trigger; reboot-required detection
-- [ ] **v0.7** — Embedded web dashboard
-- [ ] **v0.8** — Smart baselines with learning mode
-- [ ] **v0.9** — Plugin system, multi-host support, Prometheus metrics
+- [x] **v0.7** — Security hardening + UX polish: SSH/auth log watcher (brute force and failed sudo detection); quiet hours enforcement for non-critical alerts; Telegram inline keyboard buttons replacing CONFIRM text guards; weekly trend reports
+- [ ] **v0.8** — Embedded web dashboard
+- [ ] **v0.9** — Smart baselines with learning mode
+- [ ] **v0.10** — Plugin system, multi-host support, Prometheus metrics
 - Far future: Built-in AI agent for intelligent anomaly correlation and natural-language security Q&A
 
 ## License

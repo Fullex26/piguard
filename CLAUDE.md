@@ -65,6 +65,7 @@ Watchers → eventbus.Bus → Daemon subscriber → Deduplicator → Notifiers
 - `NetworkScanWatcher` — polls `ip neigh show` for new/departed ARP neighbours; alerts on unknown devices
 - `ConnectivityWatcher` — polls TCP hosts on an interval; fires events when connectivity is lost or restored
 - `AutoUpdateWatcher` — scheduled `apt-get update && apt-get upgrade -y` on configurable day/time; publishes success/failure events; detects reboot-required
+- `AuthLogWatcher` — monitors `/var/log/auth.log` for SSH brute-force attempts (sliding-window detection), failed sudo authentication, and successful SSH logins
 
 ## CLI Subcommands
 

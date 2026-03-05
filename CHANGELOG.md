@@ -7,6 +7,29 @@ PiGuard uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.7.0] — 2026-03-05
+
+### Added
+- **AuthLogWatcher** — monitors `/var/log/auth.log` for SSH brute-force attempts, failed sudo authentication, and (optionally) successful SSH logins
+  - Sliding-window brute force detection: fires `ssh.bruteforce` (Critical) when failed login count per IP exceeds configurable threshold (default: 5 in 5 min)
+  - Publishes `sudo.failure` (Warning) on sudo authentication failures
+  - Publishes `ssh.login` (Info) on successful SSH logins (opt-in via `alert_on_login: true`)
+  - New config section `auth_log` with `enabled`, `log_path`, `poll_interval`, `brute_force_threshold`, `brute_force_window`, `alert_on_login`
+  - `piguard doctor` checks log file existence when enabled
+- **Quiet hours enforcement** — non-critical notifications are suppressed during the configured quiet window (default: 23:00–07:00); Critical events always get through; events are still saved to SQLite
+- **Weekly trend reports** — automatic weekly summary sent on configurable day/time (default: Sunday 20:00) comparing this week's event counts vs last week with trend arrows (↑↓→)
+  - New config field `alerts.weekly_report` (e.g. `"sunday:20:00"`)
+  - Telegram `/report` command for on-demand weekly summary
+  - New store method `GetEventCountByType(days)` for grouped event queries
+- **Telegram inline keyboard buttons** — destructive commands now show tappable confirmation buttons instead of requiring `CONFIRM` text:
+  - `/reboot`, `/update`, `/docker remove`, `/docker prune`, `/storage images`, `/storage volumes`, `/storage apt`, `/storage all`
+  - Text-based CONFIRM still works for backward compatibility
+  - Bot now handles Telegram callback queries alongside regular messages
+
+[0.7.0]: https://github.com/Fullex26/piguard/releases/tag/v0.7.0
+
+---
+
 ## [0.6.0] — 2026-03-05
 
 ### Added

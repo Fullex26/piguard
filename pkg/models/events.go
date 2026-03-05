@@ -43,6 +43,8 @@ const (
 	EventFirewallChanged EventType = "firewall.changed"
 	EventFirewallOK      EventType = "firewall.ok"
 	EventSSHBruteForce   EventType = "ssh.bruteforce"
+	EventSudoFailure     EventType = "sudo.failure"
+	EventSSHLogin        EventType = "ssh.login"
 	EventDiskHigh        EventType = "system.disk_high"
 	EventMemoryHigh      EventType = "system.memory_high"
 	EventTempHigh        EventType = "system.temp_high"
@@ -53,6 +55,7 @@ const (
 	EventContainerStopped EventType = "docker.container_stopped"
 	EventFileChanged      EventType = "file.changed"
 	EventDailySummary     EventType = "summary.daily"
+	EventWeeklySummary    EventType = "summary.weekly"
 	EventMalwareFound     EventType = "malware.found"        // ClamAV FOUND line
 	EventRootkitWarning   EventType = "rootkit.warning"      // rkhunter Warning: line
 	EventNetworkNewDevice EventType = "network.new_device"   // Unknown device appeared on LAN

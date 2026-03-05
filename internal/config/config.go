@@ -23,6 +23,7 @@ type Config struct {
 	Network         NetworkConfig        `yaml:"network"`
 	Connectivity    ConnectivityConfig   `yaml:"connectivity"`
 	AutoUpdate      AutoUpdateConfig     `yaml:"auto_update"`
+	AuthLog         AuthLogConfig        `yaml:"auth_log"`
 }
 
 type NotificationConfig struct {
@@ -92,6 +93,7 @@ type SystemConfig struct {
 type AlertConfig struct {
 	MinSeverity  string     `yaml:"min_severity"`
 	DailySummary string     `yaml:"daily_summary"`
+	WeeklyReport string     `yaml:"weekly_report"` // e.g. "sunday:20:00"
 	QuietHours   QuietHours `yaml:"quiet_hours"`
 }
 
@@ -149,6 +151,15 @@ type ConnectivityConfig struct {
 	Hosts        []string `yaml:"hosts"`          // TCP dial targets, e.g. "8.8.8.8:53"
 }
 
+type AuthLogConfig struct {
+	Enabled             bool   `yaml:"enabled"`
+	LogPath             string `yaml:"log_path"`              // default: "/var/log/auth.log"
+	PollInterval        string `yaml:"poll_interval"`         // default: "10s"
+	BruteForceThreshold int    `yaml:"brute_force_threshold"` // default: 5
+	BruteForceWindow    string `yaml:"brute_force_window"`    // default: "5m"
+	AlertOnLogin        bool   `yaml:"alert_on_login"`        // default: false
+}
+
 // Load reads and parses the config file, expanding env vars
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
@@ -195,6 +206,7 @@ func DefaultConfig() *Config {
 		Alerts: AlertConfig{
 			MinSeverity:  "warning",
 			DailySummary: "08:00",
+			WeeklyReport: "sunday:20:00",
 			QuietHours: QuietHours{
 				Start: "23:00",
 				End:   "07:00",
@@ -242,6 +254,14 @@ func DefaultConfig() *Config {
 			Enabled:   false,
 			DayOfWeek: "sunday",
 			Time:      "03:00",
+		},
+		AuthLog: AuthLogConfig{
+			Enabled:             false,
+			LogPath:             "/var/log/auth.log",
+			PollInterval:        "10s",
+			BruteForceThreshold: 5,
+			BruteForceWindow:    "5m",
+			AlertOnLogin:        false,
 		},
 	}
 }

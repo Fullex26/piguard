@@ -20,6 +20,7 @@ import (
 	"github.com/Fullex26/piguard/internal/config"
 	"github.com/Fullex26/piguard/internal/doctor"
 	"github.com/Fullex26/piguard/internal/eventbus"
+	"github.com/Fullex26/piguard/internal/notifiers"
 	"github.com/Fullex26/piguard/internal/store"
 )
 
@@ -69,7 +70,7 @@ func (w *TelegramBotWatcher) Stop() error { return nil }
 
 // poll uses long polling to get updates from Telegram
 func (w *TelegramBotWatcher) poll(ctx context.Context) {
-	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/getUpdates?offset=%d&timeout=30&allowed_updates=[\"message\"]",
+	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/getUpdates?offset=%d&timeout=30&allowed_updates=[\"message\",\"callback_query\"]",
 		w.token, w.offset)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
@@ -97,7 +98,7 @@ func (w *TelegramBotWatcher) poll(ctx context.Context) {
 		OK     bool `json:"ok"`
 		Result []struct {
 			UpdateID int `json:"update_id"`
-			Message  struct {
+			Message  *struct {
 				Chat struct {
 					ID int64 `json:"id"`
 				} `json:"chat"`
@@ -107,6 +108,19 @@ func (w *TelegramBotWatcher) poll(ctx context.Context) {
 					Username string `json:"username"`
 				} `json:"from"`
 			} `json:"message"`
+			CallbackQuery *struct {
+				ID   string `json:"id"`
+				From struct {
+					ID       int64  `json:"id"`
+					Username string `json:"username"`
+				} `json:"from"`
+				Message struct {
+					Chat struct {
+						ID int64 `json:"id"`
+					} `json:"chat"`
+				} `json:"message"`
+				Data string `json:"data"`
+			} `json:"callback_query"`
 		} `json:"result"`
 	}
 
@@ -114,11 +128,24 @@ func (w *TelegramBotWatcher) poll(ctx context.Context) {
 		return
 	}
 
+	chatIDInt, _ := strconv.ParseInt(w.chatID, 10, 64)
+
 	for _, update := range result.Result {
 		w.offset = update.UpdateID + 1
 
-		// Security: only respond to the configured chat ID
-		chatIDInt, _ := strconv.ParseInt(w.chatID, 10, 64)
+		// Handle callback queries (inline button taps)
+		if update.CallbackQuery != nil {
+			if update.CallbackQuery.Message.Chat.ID != chatIDInt {
+				continue
+			}
+			w.handleCallback(update.CallbackQuery.ID, update.CallbackQuery.Data)
+			continue
+		}
+
+		// Handle regular messages
+		if update.Message == nil {
+			continue
+		}
 		if update.Message.Chat.ID != chatIDInt {
 			slog.Warn("ignoring message from unauthorized chat",
 				"chat_id", update.Message.Chat.ID,
@@ -179,13 +206,17 @@ func (w *TelegramBotWatcher) handleCommand(text string) {
 		response = w.cmdUpdate(parts)
 	case "/storage":
 		response = w.cmdStorageRouter(parts)
+	case "/report":
+		response = w.cmdReport()
 	case "/reboot":
 		response = w.cmdReboot(parts)
 	default:
 		response = fmt.Sprintf("Unknown command: %s\nSend /help for available commands.", cmd)
 	}
 
-	w.sendReply(response)
+	if response != "" {
+		w.sendReply(response)
+	}
 }
 
 func (w *TelegramBotWatcher) sendReply(text string) {
@@ -202,6 +233,83 @@ func (w *TelegramBotWatcher) sendReply(text string) {
 		return
 	}
 	resp.Body.Close()
+}
+
+// InlineButton represents a Telegram inline keyboard button.
+type InlineButton struct {
+	Text string `json:"text"`
+	Data string `json:"callback_data"`
+}
+
+// sendReplyWithKeyboard sends a message with an inline keyboard.
+func (w *TelegramBotWatcher) sendReplyWithKeyboard(text string, buttons [][]InlineButton) {
+	keyboard := struct {
+		InlineKeyboard [][]InlineButton `json:"inline_keyboard"`
+	}{InlineKeyboard: buttons}
+
+	markup, _ := json.Marshal(keyboard)
+
+	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", w.token)
+
+	data := url.Values{}
+	data.Set("chat_id", w.chatID)
+	data.Set("parse_mode", "HTML")
+	data.Set("text", text)
+	data.Set("reply_markup", string(markup))
+
+	resp, err := http.PostForm(apiURL, data)
+	if err != nil {
+		slog.Error("telegram reply with keyboard failed", "error", err)
+		return
+	}
+	resp.Body.Close()
+}
+
+// answerCallbackQuery acknowledges a callback query (removes the loading spinner).
+func (w *TelegramBotWatcher) answerCallbackQuery(callbackID string) {
+	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/answerCallbackQuery", w.token)
+	data := url.Values{}
+	data.Set("callback_query_id", callbackID)
+	resp, err := http.PostForm(apiURL, data)
+	if err != nil {
+		return
+	}
+	resp.Body.Close()
+}
+
+// handleCallback routes inline button presses to the appropriate command.
+func (w *TelegramBotWatcher) handleCallback(callbackID, data string) {
+	w.answerCallbackQuery(callbackID)
+
+	slog.Info("telegram callback received", "data", data)
+
+	var response string
+
+	switch {
+	case data == "reboot:confirm":
+		response = w.cmdReboot([]string{"/reboot", "CONFIRM"})
+	case data == "update:confirm":
+		response = w.cmdUpdate([]string{"/update", "CONFIRM"})
+	case data == "docker:prune":
+		response = w.cmdDockerPrune([]string{"CONFIRM"})
+	case strings.HasPrefix(data, "docker:rm:"):
+		name := strings.TrimPrefix(data, "docker:rm:")
+		response = w.cmdDockerRemove([]string{name, "CONFIRM"})
+	case data == "storage:images":
+		response = w.cmdStorageImages([]string{"CONFIRM"})
+	case data == "storage:volumes":
+		response = w.cmdStorageVolumes([]string{"CONFIRM"})
+	case data == "storage:apt":
+		response = w.cmdStorageApt([]string{"CONFIRM"})
+	case data == "storage:all":
+		response = w.cmdStorageAll([]string{"CONFIRM"})
+	default:
+		response = fmt.Sprintf("Unknown action: %s", data)
+	}
+
+	if response != "" {
+		w.sendReply(response)
+	}
 }
 
 // ── Command implementations ──
@@ -243,6 +351,9 @@ func (w *TelegramBotWatcher) cmdHelp() string {
 <b>Updates</b>
 /updates — Check available package upgrades
 /update CONFIRM — Run apt upgrade now
+
+<b>Reports</b>
+/report — On-demand weekly trend report
 
 <b>Diagnostics</b>
 /doctor — Check PiGuard installation health
@@ -470,7 +581,10 @@ func (w *TelegramBotWatcher) cmdDockerRemove(args []string) string {
 	name := args[0]
 	safeName := html.EscapeString(name)
 	if len(args) < 2 || strings.ToUpper(args[len(args)-1]) != "CONFIRM" {
-		return fmt.Sprintf("⚠️ This will force-remove container <b>%s</b>.\n\nSend: /docker remove %s CONFIRM", safeName, name)
+		w.sendReplyWithKeyboard(
+			fmt.Sprintf("⚠️ This will force-remove container <b>%s</b>.", safeName),
+			[][]InlineButton{{{Text: "🗑️ Remove " + name, Data: "docker:rm:" + name}}})
+		return ""
 	}
 	out, err := exec.Command("docker", "rm", "-f", name).CombinedOutput()
 	if err != nil {
@@ -514,7 +628,10 @@ func (w *TelegramBotWatcher) cmdDockerLogs(args []string) string {
 
 func (w *TelegramBotWatcher) cmdDockerPrune(args []string) string {
 	if len(args) == 0 || strings.ToUpper(args[len(args)-1]) != "CONFIRM" {
-		return "⚠️ <b>Docker system prune</b> removes all stopped containers, unused networks, dangling images, and build cache.\n\nSend: /docker prune CONFIRM"
+		w.sendReplyWithKeyboard(
+			"⚠️ <b>Docker system prune</b> removes all stopped containers, unused networks, dangling images, and build cache.",
+			[][]InlineButton{{{Text: "🧹 Prune Docker", Data: "docker:prune"}}})
+		return ""
 	}
 	w.sendReply("🧹 Running docker system prune...")
 	out, err := exec.Command("docker", "system", "prune", "-f").CombinedOutput()
@@ -581,7 +698,10 @@ func (w *TelegramBotWatcher) cmdStorageReport() string {
 
 func (w *TelegramBotWatcher) cmdStorageImages(args []string) string {
 	if len(args) == 0 || strings.ToUpper(args[len(args)-1]) != "CONFIRM" {
-		return "⚠️ <b>Prune unused Docker images</b> — removes all images not referenced by a container.\n\nSend: /storage images CONFIRM"
+		w.sendReplyWithKeyboard(
+			"⚠️ <b>Prune unused Docker images</b> — removes all images not referenced by a container.",
+			[][]InlineButton{{{Text: "🧹 Prune Images", Data: "storage:images"}}})
+		return ""
 	}
 	w.sendReply("🧹 Pruning Docker images...")
 	out, err := exec.Command("docker", "image", "prune", "-af").CombinedOutput()
@@ -594,7 +714,10 @@ func (w *TelegramBotWatcher) cmdStorageImages(args []string) string {
 
 func (w *TelegramBotWatcher) cmdStorageVolumes(args []string) string {
 	if len(args) == 0 || strings.ToUpper(args[len(args)-1]) != "CONFIRM" {
-		return "⚠️ <b>Prune unused Docker volumes</b> — removes volumes not attached to any container.\n\nSend: /storage volumes CONFIRM"
+		w.sendReplyWithKeyboard(
+			"⚠️ <b>Prune unused Docker volumes</b> — removes volumes not attached to any container.",
+			[][]InlineButton{{{Text: "🧹 Prune Volumes", Data: "storage:volumes"}}})
+		return ""
 	}
 	w.sendReply("🧹 Pruning Docker volumes...")
 	out, err := exec.Command("docker", "volume", "prune", "-f").CombinedOutput()
@@ -607,7 +730,10 @@ func (w *TelegramBotWatcher) cmdStorageVolumes(args []string) string {
 
 func (w *TelegramBotWatcher) cmdStorageApt(args []string) string {
 	if len(args) == 0 || strings.ToUpper(args[len(args)-1]) != "CONFIRM" {
-		return "⚠️ <b>Clean apt cache</b> — runs <code>apt-get clean &amp;&amp; apt-get autoremove -y</code>.\n\nSend: /storage apt CONFIRM"
+		w.sendReplyWithKeyboard(
+			"⚠️ <b>Clean apt cache</b> — runs <code>apt-get clean &amp;&amp; apt-get autoremove -y</code>.",
+			[][]InlineButton{{{Text: "🧹 Clean apt", Data: "storage:apt"}}})
+		return ""
 	}
 	w.sendReply("🧹 Cleaning apt cache...")
 	// apt-get clean never fails; apt-get autoremove may exit non-zero on warnings
@@ -629,7 +755,10 @@ func (w *TelegramBotWatcher) cmdStorageApt(args []string) string {
 
 func (w *TelegramBotWatcher) cmdStorageAll(args []string) string {
 	if len(args) == 0 || strings.ToUpper(args[len(args)-1]) != "CONFIRM" {
-		return "⚠️ <b>Full storage cleanup</b> — prunes Docker images, volumes, and apt cache.\n\nSend: /storage all CONFIRM"
+		w.sendReplyWithKeyboard(
+			"⚠️ <b>Full storage cleanup</b> — prunes Docker images, volumes, and apt cache.",
+			[][]InlineButton{{{Text: "🧹 Full Cleanup", Data: "storage:all"}}})
+		return ""
 	}
 	w.sendReply("🧹 Running full storage cleanup...")
 
@@ -1034,9 +1163,42 @@ func getLocalIP() string {
 	return "localhost"
 }
 
+func (w *TelegramBotWatcher) cmdReport() string {
+	if w.store == nil {
+		return "❌ Event store not available"
+	}
+
+	hostname, _ := os.Hostname()
+	thisWeek, err := w.store.GetEventCountByType(7)
+	if err != nil {
+		return "❌ Failed to query events"
+	}
+	lastTwoWeeks, _ := w.store.GetEventCountByType(14)
+
+	// Subtract this week from the 14-day total to get last week only
+	lastWeekOnly := make(map[string]int)
+	for k, v := range lastTwoWeeks {
+		lastWeekOnly[k] = v - thisWeek[k]
+	}
+
+	totalThis := 0
+	for _, v := range thisWeek {
+		totalThis += v
+	}
+	totalLast := 0
+	for _, v := range lastWeekOnly {
+		totalLast += v
+	}
+
+	uptimeStr := w.getUptimeStr()
+	return notifiers.FormatWeeklyReport(hostname, thisWeek, lastWeekOnly, totalThis, totalLast, uptimeStr)
+}
+
 func (w *TelegramBotWatcher) cmdReboot(parts []string) string {
 	if len(parts) < 2 || strings.ToUpper(parts[1]) != "CONFIRM" {
-		return "⚠️ <b>Reboot requires confirmation</b>\n\nSend: /reboot CONFIRM"
+		w.sendReplyWithKeyboard("⚠️ <b>Reboot requires confirmation</b>",
+			[][]InlineButton{{{Text: "🔄 Reboot Now", Data: "reboot:confirm"}}})
+		return ""
 	}
 
 	w.sendReply("🔄 Rebooting in 5 seconds...")
@@ -1089,7 +1251,9 @@ func (w *TelegramBotWatcher) cmdUpdates() string {
 
 func (w *TelegramBotWatcher) cmdUpdate(parts []string) string {
 	if len(parts) < 2 || strings.ToUpper(parts[1]) != "CONFIRM" {
-		return "⚠️ <b>System upgrade requires confirmation</b>\n\nThis will run <code>apt-get update && apt-get upgrade -y</code>.\n\nSend: /update CONFIRM"
+		w.sendReplyWithKeyboard("⚠️ <b>System upgrade requires confirmation</b>\n\nThis will run <code>apt-get update && apt-get upgrade -y</code>.",
+			[][]InlineButton{{{Text: "📦 Run Update", Data: "update:confirm"}}})
+		return ""
 	}
 
 	w.sendReply("📦 Running system update... this may take a few minutes.")

@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -91,6 +93,9 @@ func New(cfg *config.Config) (*Daemon, error) {
 	if cfg.AutoUpdate.Enabled {
 		d.watchers = append(d.watchers, watchers.NewAutoUpdateWatcher(cfg, bus))
 	}
+	if cfg.AuthLog.Enabled {
+		d.watchers = append(d.watchers, watchers.NewAuthLogWatcher(cfg, bus))
+	}
 
 	// Register notifiers
 	if cfg.Notifications.Telegram.Enabled {
@@ -141,6 +146,13 @@ func (d *Daemon) Run() error {
 	go func() {
 		defer wg.Done()
 		d.runDailySummary(ctx)
+	}()
+
+	// Start weekly report scheduler
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		d.runWeeklyReport(ctx)
 	}()
 
 	// Start dedup cleanup
@@ -196,6 +208,12 @@ func (d *Daemon) handleEvent(event models.Event) {
 		return
 	}
 
+	// Quiet hours: suppress non-critical notifications (events still saved above)
+	if d.isQuietHour(time.Now()) && event.Severity != models.SeverityCritical {
+		slog.Debug("quiet hours: suppressing notification", "type", event.Type, "severity", event.Severity.String())
+		return
+	}
+
 	// Send to all notifiers
 	for _, n := range d.notifiers {
 		slog.Info("sending notification",
@@ -245,6 +263,105 @@ func (d *Daemon) runDailySummary(ctx context.Context) {
 	}
 }
 
+func (d *Daemon) runWeeklyReport(ctx context.Context) {
+	schedule := d.cfg.Alerts.WeeklyReport
+	if schedule == "" {
+		return
+	}
+
+	// Parse "sunday:20:00" → weekday + HH:MM
+	parts := strings.SplitN(schedule, ":", 2)
+	if len(parts) != 2 {
+		slog.Warn("invalid weekly_report format", "value", schedule)
+		return
+	}
+	weekday := parseWeekdayName(parts[0])
+	timeStr := parts[1]
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(1 * time.Minute):
+			now := time.Now()
+			if now.Weekday() != weekday {
+				continue
+			}
+			hhmm := fmt.Sprintf("%02d:%02d", now.Hour(), now.Minute())
+			if hhmm != timeStr {
+				continue
+			}
+
+			hostname, _ := os.Hostname()
+			thisWeek, _ := d.store.GetEventCountByType(7)
+			lastWeek, _ := d.store.GetEventCountByType(14)
+
+			// Subtract this week's counts from the 14-day total to get last week only
+			lastWeekOnly := make(map[string]int)
+			for k, v := range lastWeek {
+				lastWeekOnly[k] = v - thisWeek[k]
+			}
+
+			totalThis := 0
+			for _, v := range thisWeek {
+				totalThis += v
+			}
+			totalLast := 0
+			for _, v := range lastWeekOnly {
+				totalLast += v
+			}
+
+			uptimeStr := getUptimeStr()
+			msg := notifiers.FormatWeeklyReport(hostname, thisWeek, lastWeekOnly, totalThis, totalLast, uptimeStr)
+			for _, n := range d.notifiers {
+				slog.Info("sending notification", "notifier", n.Name(), "type", "weekly_report")
+				if err := n.SendRaw(msg); err != nil {
+					slog.Error("notification failed", "notifier", n.Name(), "type", "weekly_report", "error", err)
+				}
+			}
+
+			// Sleep past this minute to avoid double-send
+			time.Sleep(61 * time.Second)
+		}
+	}
+}
+
+func parseWeekdayName(s string) time.Weekday {
+	switch strings.ToLower(s) {
+	case "sunday", "sun":
+		return time.Sunday
+	case "monday", "mon":
+		return time.Monday
+	case "tuesday", "tue":
+		return time.Tuesday
+	case "wednesday", "wed":
+		return time.Wednesday
+	case "thursday", "thu":
+		return time.Thursday
+	case "friday", "fri":
+		return time.Friday
+	case "saturday", "sat":
+		return time.Saturday
+	default:
+		return time.Sunday
+	}
+}
+
+func getUptimeStr() string {
+	data, err := os.ReadFile("/proc/uptime")
+	if err != nil {
+		return "unknown"
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) == 0 {
+		return "unknown"
+	}
+	seconds, _ := strconv.ParseFloat(fields[0], 64)
+	days := int(seconds) / 86400
+	hours := (int(seconds) % 86400) / 3600
+	return fmt.Sprintf("%dd %dh", days, hours)
+}
+
 func (d *Daemon) runCleanup(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
@@ -262,6 +379,53 @@ func (d *Daemon) runCleanup(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// parseHHMM parses "HH:MM" into hours and minutes.
+func parseHHMM(s string) (int, int, error) {
+	parts := strings.SplitN(s, ":", 2)
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("invalid HH:MM format: %q", s)
+	}
+	h, err := strconv.Atoi(parts[0])
+	if err != nil || h < 0 || h > 23 {
+		return 0, 0, fmt.Errorf("invalid hour: %q", parts[0])
+	}
+	m, err := strconv.Atoi(parts[1])
+	if err != nil || m < 0 || m > 59 {
+		return 0, 0, fmt.Errorf("invalid minute: %q", parts[1])
+	}
+	return h, m, nil
+}
+
+// isQuietHour returns true if the given time falls within the configured quiet window.
+// Handles overnight wrap-around (e.g. 23:00–07:00) and same-day windows (e.g. 09:00–17:00).
+// Returns false if quiet hours are not configured or invalid.
+func (d *Daemon) isQuietHour(now time.Time) bool {
+	qh := d.cfg.Alerts.QuietHours
+	if qh.Start == "" || qh.End == "" {
+		return false
+	}
+
+	sh, sm, err := parseHHMM(qh.Start)
+	if err != nil {
+		return false
+	}
+	eh, em, err := parseHHMM(qh.End)
+	if err != nil {
+		return false
+	}
+
+	startMin := sh*60 + sm
+	endMin := eh*60 + em
+	nowMin := now.Hour()*60 + now.Minute()
+
+	if startMin <= endMin {
+		// Same-day window: e.g. 09:00–17:00
+		return nowMin >= startMin && nowMin < endMin
+	}
+	// Overnight wrap: e.g. 23:00–07:00
+	return nowMin >= startMin || nowMin < endMin
 }
 
 // TestNotifiers sends a test message to all configured notifiers

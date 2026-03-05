@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -322,6 +323,57 @@ func TestPrune(t *testing.T) {
 	count, _ := s.GetEventCount(24 * 365)
 	if count != 3 {
 		t.Errorf("remaining events = %d, want 3", count)
+	}
+}
+
+func TestGetEventCountByType(t *testing.T) {
+	s := openTestStore(t)
+	now := time.Now()
+
+	// Insert varied event types
+	types := []models.EventType{
+		models.EventPortOpened, models.EventPortOpened, models.EventPortOpened,
+		models.EventFirewallChanged, models.EventFirewallChanged,
+		models.EventDiskHigh,
+	}
+	for i, evType := range types {
+		e := models.Event{
+			ID:        fmt.Sprintf("e%d", i),
+			Type:      evType,
+			Severity:  models.SeverityWarning,
+			Hostname:  "test",
+			Timestamp: now.Add(-time.Duration(i) * time.Hour),
+			Message:   "test",
+			Source:    "test",
+		}
+		if err := s.SaveEvent(e); err != nil {
+			t.Fatalf("SaveEvent: %v", err)
+		}
+	}
+
+	result, err := s.GetEventCountByType(7)
+	if err != nil {
+		t.Fatalf("GetEventCountByType: %v", err)
+	}
+	if result[string(models.EventPortOpened)] != 3 {
+		t.Errorf("port.opened count = %d, want 3", result[string(models.EventPortOpened)])
+	}
+	if result[string(models.EventFirewallChanged)] != 2 {
+		t.Errorf("firewall.changed count = %d, want 2", result[string(models.EventFirewallChanged)])
+	}
+	if result[string(models.EventDiskHigh)] != 1 {
+		t.Errorf("system.disk_high count = %d, want 1", result[string(models.EventDiskHigh)])
+	}
+}
+
+func TestGetEventCountByType_Empty(t *testing.T) {
+	s := openTestStore(t)
+	result, err := s.GetEventCountByType(7)
+	if err != nil {
+		t.Fatalf("GetEventCountByType: %v", err)
+	}
+	if len(result) != 0 {
+		t.Errorf("expected empty map, got %v", result)
 	}
 }
 
