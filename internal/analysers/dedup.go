@@ -1,6 +1,7 @@
 package analysers
 
 import (
+	"strings"
 	"sync"
 	"time"
 
@@ -57,6 +58,12 @@ func (d *Deduplicator) dedupKey(event models.Event) string {
 	switch event.Type {
 	case models.EventPortOpened, models.EventPortClosed:
 		if event.Port != nil {
+			// Wildcard-exposed ports (0.0.0.0 and ::) are often bound on both
+			// IPv4 and IPv6 by the same process simultaneously. Normalize to
+			// portNum+process so dual-stack binds produce a single alert.
+			if event.Port.IsExposed {
+				return string(event.Type) + ":exposed:" + portFromAddr(event.Port.Address) + ":" + event.Port.ProcessName
+			}
 			return string(event.Type) + ":" + event.Port.Address
 		}
 	case models.EventFirewallChanged:
@@ -65,4 +72,13 @@ func (d *Deduplicator) dedupKey(event models.Event) string {
 		}
 	}
 	return string(event.Type) + ":" + event.Message
+}
+
+// portFromAddr extracts the port number from an address string.
+// Works for both "0.0.0.0:3001" and ":::3001" formats.
+func portFromAddr(addr string) string {
+	if idx := strings.LastIndex(addr, ":"); idx >= 0 {
+		return addr[idx+1:]
+	}
+	return addr
 }

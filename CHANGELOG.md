@@ -7,6 +7,28 @@ PiGuard uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.5.0] — 2026-03-05
+
+### Added
+- **ConnectivityWatcher** — polls configurable TCP probe hosts (default: `8.8.8.8:53`, `1.1.1.1:53`) every 30 s and fires:
+  - `connectivity.lost` (Critical) when all probe hosts are unreachable; bypasses deduplication on first occurrence
+  - `connectivity.restored` (Info) when any host becomes reachable again, including outage duration
+  - No ICMP/root required — uses plain `net.DialTimeout("tcp", ...)` so it works on all platforms
+  - New config section `connectivity` with `enabled`, `poll_interval`, and `hosts`
+- **Enhanced `/services` command** — Telegram bot `/services` now appends a Docker section showing running containers with host port bindings formatted as local access URLs (e.g. `:8080 → http://192.168.1.100:8080`)
+- **`piguard doctor`** — new CLI command that checks installation health: config, daemon, event store, and dependencies (ss, iptables, docker, rkhunter, ClamAV, ip). Exits non-zero if any check fails. Disabled-watcher checks are automatically skipped.
+- **Telegram `/doctor`** — same health report via the bot; renders as HTML with fix commands in `<code>` blocks
+- **Watchtower container update alerts** — `DockerWatcher` detects when Watchtower replaces a container with a new image digest and fires `docker.container_updated` (Info) instead of a generic start alert
+
+### Fixed
+- **SQLITE_BUSY locking** — concurrent `SaveEvent` calls under burst event loads no longer race on SQLite's single-writer lock. Fix: `db.SetMaxOpenConns(1)` serialises writes; `_busy_timeout` increased to 30 s
+- **Dual-stack port alert duplicates** — Docker containers binding to both `0.0.0.0:PORT` and `:::PORT` no longer fire two separate alerts; deduplicator normalises keys to `(port, process)`
+- **rkhunter `/scan` permission error** — surfaces `sudo chmod 666 /var/log/rkhunter.log` instead of a generic scan error
+
+[0.5.0]: https://github.com/Fullex26/piguard/releases/tag/v0.5.0
+
+---
+
 ## [0.4.0] — 2026-03-03
 
 ### Added

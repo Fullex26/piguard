@@ -9,6 +9,7 @@ import (
 
 	"github.com/Fullex26/piguard/internal/config"
 	"github.com/Fullex26/piguard/internal/daemon"
+	"github.com/Fullex26/piguard/internal/doctor"
 	"github.com/Fullex26/piguard/internal/setup"
 	"github.com/Fullex26/piguard/internal/store"
 )
@@ -29,6 +30,7 @@ func main() {
 		testCmd(),
 		setupCmd(),
 		versionCmd(),
+		doctorCmd(),
 	)
 
 	if err := root.Execute(); err != nil {
@@ -142,6 +144,26 @@ func setupCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&envPath, "env-file", setup.DefaultEnvPath, "path to env file for credentials")
 	return cmd
+}
+
+func doctorCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "doctor",
+		Short: "Check PiGuard installation health",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Load config best-effort — doctor reports if it fails.
+			cfg, _ := config.Load(cfgPath)
+			results := doctor.New(cfg, store.DefaultDBPath).Run()
+			fmt.Print(doctor.RenderCLI(results))
+			// Exit non-zero if any check failed.
+			for _, r := range results {
+				if r.Status == doctor.StatusFail {
+					os.Exit(1)
+				}
+			}
+			return nil
+		},
+	}
 }
 
 func versionCmd() *cobra.Command {

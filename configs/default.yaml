@@ -115,3 +115,11 @@ network:
   # MACs to never alert on (your router, own devices, etc.)
   ignore_macs: []
   #   - "aa:bb:cc:dd:ee:ff"
+
+# ── Connectivity monitoring ──
+connectivity:
+  enabled: true
+  poll_interval: "30s"
+  hosts:
+    - "8.8.8.8:53"
+    - "1.1.1.1:53"

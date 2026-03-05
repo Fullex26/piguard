@@ -85,6 +85,9 @@ func New(cfg *config.Config) (*Daemon, error) {
 	if cfg.Network.Enabled {
 		d.watchers = append(d.watchers, watchers.NewNetworkScanWatcher(cfg, bus))
 	}
+	if cfg.Connectivity.Enabled {
+		d.watchers = append(d.watchers, watchers.NewConnectivityWatcher(cfg, bus))
+	}
 
 	// Register notifiers
 	if cfg.Notifications.Telegram.Enabled {

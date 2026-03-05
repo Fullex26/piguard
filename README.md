@@ -41,10 +41,12 @@ sudo systemctl enable --now piguard
 - **Firewall**: Watches iptables chains for policy changes or missing rules
 - **System**: Disk, memory, CPU temperature (Pi thermal sensor)
 - **File integrity**: Detects changes to critical system files (`/etc/passwd`, SSH config, sudoers, crontab, etc.)
-- **Docker containers**: Alerts on container start, crash (non-zero exit), graceful stop (opt-in), and health transitions; interactive Telegram controls (stop/restart/fix/logs/remove/prune)
+- **Docker containers**: Alerts on container start, crash (non-zero exit), graceful stop (opt-in), health transitions, and **Watchtower image updates** (detects same-name container restarting with a new image digest); interactive Telegram controls (stop/restart/fix/logs/remove/prune)
 - **Storage management**: Telegram `/storage` command — disk usage report, Docker image/volume pruning, apt cache cleanup, all with confirmation guards
 - **Network devices**: Detects new/unknown devices on the local network via ARP neighbour table (`ip neigh show`)
 - **Security tools**: Tails ClamAV and rkhunter logs — fires Critical alerts on malware detections or rootkit warnings
+- **Connectivity**: Polls configurable TCP probe hosts (default: `8.8.8.8:53`, `1.1.1.1:53`) every 30 s; fires Critical alert on outage and Info alert on recovery with outage duration
+- **Services dashboard**: Telegram `/services` shows running systemd services plus Docker containers with host port bindings as local access URLs
 - **Daily summary**: 8am digest with full system status
 
 ## Works Best With
@@ -92,6 +94,7 @@ piguard run       # Start the daemon
 piguard status    # Show current security status
 piguard test      # Send test notification
 piguard setup     # Interactive setup wizard
+piguard doctor    # Check installation health
 piguard version   # Print version
 ```
 
@@ -135,12 +138,11 @@ make deploy-pi PI_HOST=other-pi  # override host
 - [x] **v0.2** — Docker container event monitoring (start/stop/crash/unhealthy)
 - [x] **v0.3** — Telegram bot Docker control (stop/restart/fix/logs/remove/prune); NetworkScanWatcher (ARP-based new device detection)
 - [x] **v0.4** — System storage management via Telegram: Docker image/volume pruning, apt cache cleanup, disk usage reports
-- [ ] **v0.5** — Services dashboard + connectivity monitoring: Telegram `/services` enhanced with running Docker container port bindings and access URLs; `ConnectivityWatcher` detecting internet outages with recovery duration alerts
-- [ ] **v0.6** — `piguard doctor` CLI command: health-check of installation, config, dependencies, and installed security tools (ClamAV, rkhunter, Docker, iptables); Telegram `/daemon` command to restart or stop the PiGuard service remotely
-- [ ] **v0.7** — Auto-update support: scheduled `apt upgrade` + clean with Telegram confirmation and status reporting
-- [ ] **v0.8** — Embedded web dashboard
-- [ ] **v0.9** — Smart baselines with learning mode
-- [ ] **v1.0** — Plugin system, multi-host support, Prometheus metrics
+- [x] **v0.5** — Services dashboard + connectivity monitoring + diagnostics: Telegram `/services` with Docker port URLs; `ConnectivityWatcher` for internet outage alerts; `piguard doctor` CLI + Telegram `/doctor` for installation health checks; Watchtower update detection; SQLITE_BUSY and dual-stack dedup fixes
+- [ ] **v0.6** — Auto-update support: scheduled `apt upgrade` + clean with Telegram confirmation and status reporting
+- [ ] **v0.7** — Embedded web dashboard
+- [ ] **v0.8** — Smart baselines with learning mode
+- [ ] **v0.9** — Plugin system, multi-host support, Prometheus metrics
 - Far future: Built-in AI agent for intelligent anomaly correlation and natural-language security Q&A
 
 ## License

@@ -2,6 +2,7 @@ package watchers
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -330,4 +331,83 @@ func TestDockerWatcher_Check_DockerUnavailable(t *testing.T) {
 	// Should log debug and return without panicking
 	w.check()
 	expectNoEvent(t, received)
+}
+
+// ── Ports field is parsed ─────────────────────────────────────────────────────
+
+func TestParseDockerOutput_PortsAndImageID(t *testing.T) {
+	input := `{"ID":"abc123","Names":"nginx","Image":"nginx:latest","ImageID":"sha256:deadbeef","State":"running","Status":"Up 1 hour","Ports":"0.0.0.0:8080->80/tcp"}`
+	got, err := parseDockerOutput(input)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("expected 1 container, err=%v", err)
+	}
+	if got[0].Ports != "0.0.0.0:8080->80/tcp" {
+		t.Errorf("Ports = %q", got[0].Ports)
+	}
+	if got[0].ImageID != "sha256:deadbeef" {
+		t.Errorf("ImageID = %q", got[0].ImageID)
+	}
+}
+
+// ── Watchtower update detection ───────────────────────────────────────────────
+
+func TestDockerWatcher_Check_WatchtowerUpdate(t *testing.T) {
+	// Watchtower removes old container, starts new one: same name, new ID, new ImageID.
+	oldJSON := `{"ID":"oldid123fullid","Names":"myapp","Image":"myimage:v1","ImageID":"sha256:aaa111","State":"running","Status":"Up 2 hours"}`
+	newJSON := `{"ID":"newid456fullid","Names":"myapp","Image":"myimage:v2","ImageID":"sha256:bbb222","State":"running","Status":"Up 5 seconds"}`
+
+	w, received := newTestDockerWatcher(false, func() ([]byte, error) {
+		return []byte(newJSON), nil
+	})
+	seedBaseline(w, oldJSON)
+	w.nameToImage["myapp"] = "sha256:aaa111" // simulate previous cycle state
+
+	w.check()
+
+	e := awaitEvent(t, received)
+	if e.Type != models.EventContainerUpdated {
+		t.Errorf("event type = %q, want %q", e.Type, models.EventContainerUpdated)
+	}
+	if e.Severity != models.SeverityInfo {
+		t.Errorf("severity = %v, want Info", e.Severity)
+	}
+	if !strings.Contains(e.Message, "updated") {
+		t.Errorf("message %q should contain 'updated'", e.Message)
+	}
+}
+
+func TestDockerWatcher_Check_SameImage_NotWatchtower(t *testing.T) {
+	// Container recreated with the same image (e.g. docker stop + start) — EventContainerStart.
+	oldJSON := `{"ID":"oldid123fullid","Names":"myapp","Image":"myimage:v1","ImageID":"sha256:aaa111","State":"running","Status":"Up 2 hours"}`
+	newJSON := `{"ID":"newid456fullid","Names":"myapp","Image":"myimage:v1","ImageID":"sha256:aaa111","State":"running","Status":"Up 3 seconds"}`
+
+	w, received := newTestDockerWatcher(false, func() ([]byte, error) {
+		return []byte(newJSON), nil
+	})
+	seedBaseline(w, oldJSON)
+	w.nameToImage["myapp"] = "sha256:aaa111"
+
+	w.check()
+
+	e := awaitEvent(t, received)
+	if e.Type != models.EventContainerStart {
+		t.Errorf("event type = %q, want %q (same image should be Start, not Updated)", e.Type, models.EventContainerStart)
+	}
+}
+
+func TestDockerWatcher_Check_BrandNewContainer_NotWatchtower(t *testing.T) {
+	// Completely new container — no prior nameToImage entry — EventContainerStart.
+	newJSON := `{"ID":"newid456fullid","Names":"freshapp","Image":"freshapp:v1","ImageID":"sha256:ccc333","State":"running","Status":"Up 1 second"}`
+
+	w, received := newTestDockerWatcher(false, func() ([]byte, error) {
+		return []byte(newJSON), nil
+	})
+	// Empty baseline and nameToImage
+
+	w.check()
+
+	e := awaitEvent(t, received)
+	if e.Type != models.EventContainerStart {
+		t.Errorf("event type = %q, want %q", e.Type, models.EventContainerStart)
+	}
 }

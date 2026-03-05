@@ -187,6 +187,67 @@ func TestCmdDockerPrune_WithWrongKeyword(t *testing.T) {
 	}
 }
 
+// ── parseHostPorts ────────────────────────────────────────────────────────────
+
+func TestParseHostPorts(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{
+			name:  "empty",
+			input: "",
+			want:  nil,
+		},
+		{
+			name:  "single port",
+			input: "0.0.0.0:8080->80/tcp",
+			want:  []string{"8080"},
+		},
+		{
+			name:  "ipv6 format deduplicated",
+			input: "0.0.0.0:8080->80/tcp, :::8080->80/tcp",
+			want:  []string{"8080"},
+		},
+		{
+			name:  "multiple distinct ports",
+			input: "0.0.0.0:8080->80/tcp, 0.0.0.0:443->443/tcp",
+			want:  []string{"8080", "443"},
+		},
+		{
+			name:  "no arrow — no host port",
+			input: "80/tcp",
+			want:  nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseHostPorts(tt.input)
+			if len(got) != len(tt.want) {
+				t.Errorf("parseHostPorts(%q) = %v, want %v", tt.input, got, tt.want)
+				return
+			}
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Errorf("parseHostPorts(%q)[%d] = %q, want %q", tt.input, i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+// ── getLocalIP ────────────────────────────────────────────────────────────────
+
+func TestGetLocalIP_ReturnsNonEmpty(t *testing.T) {
+	// In CI, hostname -I may or may not work. Either way, we expect a non-empty string.
+	ip := getLocalIP()
+	if ip == "" {
+		t.Error("getLocalIP() returned empty string")
+	}
+}
+
 func containsString(s, sub string) bool {
 	for i := 0; i <= len(s)-len(sub); i++ {
 		if s[i:i+len(sub)] == sub {

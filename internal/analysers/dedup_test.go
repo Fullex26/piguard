@@ -160,6 +160,49 @@ func TestShouldAlert_FirewallDedup_NilFirewall(t *testing.T) {
 	}
 }
 
+func TestShouldAlert_DualStackDedup(t *testing.T) {
+	d := NewDeduplicator(time.Hour)
+
+	// Docker binds the same port on both IPv4 and IPv6 simultaneously.
+	// Only the first should fire an alert; the second must be suppressed.
+	ipv4 := models.Event{
+		Type: models.EventPortOpened,
+		Port: &models.PortInfo{Address: "0.0.0.0:3001", ProcessName: "docker-proxy", IsExposed: true},
+	}
+	ipv6 := models.Event{
+		Type: models.EventPortOpened,
+		Port: &models.PortInfo{Address: ":::3001", ProcessName: "docker-proxy", IsExposed: true},
+	}
+
+	if !d.ShouldAlert(ipv4) {
+		t.Error("first (IPv4) port.opened should alert")
+	}
+	if d.ShouldAlert(ipv6) {
+		t.Error("IPv6 dual-stack duplicate should be deduplicated")
+	}
+}
+
+func TestShouldAlert_DualStackDedup_DifferentPorts(t *testing.T) {
+	d := NewDeduplicator(time.Hour)
+
+	p80 := models.Event{
+		Type: models.EventPortOpened,
+		Port: &models.PortInfo{Address: "0.0.0.0:80", ProcessName: "nginx", IsExposed: true},
+	}
+	p443 := models.Event{
+		Type: models.EventPortOpened,
+		Port: &models.PortInfo{Address: "0.0.0.0:443", ProcessName: "nginx", IsExposed: true},
+	}
+
+	// Two different ports from the same process must both alert.
+	if !d.ShouldAlert(p80) {
+		t.Error("port 80 should alert")
+	}
+	if !d.ShouldAlert(p443) {
+		t.Error("port 443 should alert independently from port 80")
+	}
+}
+
 func TestShouldAlert_GenericDedup(t *testing.T) {
 	d := NewDeduplicator(time.Hour)
 	e := models.Event{Type: models.EventDiskHigh, Message: "disk at 95%"}

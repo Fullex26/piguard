@@ -56,7 +56,10 @@ const (
 	EventMalwareFound     EventType = "malware.found"        // ClamAV FOUND line
 	EventRootkitWarning   EventType = "rootkit.warning"      // rkhunter Warning: line
 	EventNetworkNewDevice EventType = "network.new_device"   // Unknown device appeared on LAN
-	EventNetworkDeviceLeft EventType = "network.device_left" // Known device disappeared from LAN
+	EventNetworkDeviceLeft   EventType = "network.device_left"        // Known device disappeared from LAN
+	EventConnectivityLost     EventType = "connectivity.lost"      // All probe hosts unreachable
+	EventConnectivityRestored EventType = "connectivity.restored"   // Connectivity returned after outage
+	EventContainerUpdated     EventType = "docker.container_updated" // Container replaced with new image (Watchtower)
 )
 
 // PortInfo describes a listening port with full context
