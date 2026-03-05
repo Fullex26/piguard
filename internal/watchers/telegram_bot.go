@@ -1,6 +1,7 @@
 package watchers
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/Fullex26/piguard/internal/analysers"
 	"github.com/Fullex26/piguard/internal/config"
+	"github.com/Fullex26/piguard/internal/doctor"
 	"github.com/Fullex26/piguard/internal/eventbus"
 	"github.com/Fullex26/piguard/internal/store"
 )
@@ -169,6 +171,8 @@ func (w *TelegramBotWatcher) handleCommand(text string) {
 		response = w.cmdIP()
 	case "/services":
 		response = w.cmdServices()
+	case "/doctor":
+		response = w.cmdDoctor()
 	case "/storage":
 		response = w.cmdStorageRouter(parts)
 	case "/reboot":
@@ -231,6 +235,9 @@ func (w *TelegramBotWatcher) cmdHelp() string {
 /storage volumes CONFIRM — Prune unused Docker volumes
 /storage apt CONFIRM — Clean apt package cache
 /storage all CONFIRM — Run all pruning operations
+
+<b>Diagnostics</b>
+/doctor — Check PiGuard installation health
 
 <b>Danger zone</b>
 /reboot CONFIRM — Reboot the Pi`
@@ -821,8 +828,12 @@ func (w *TelegramBotWatcher) cmdScan() string {
 			} else {
 				b.WriteString("⚠️ <b>rkhunter:</b> Warnings detected (check log)\n\n")
 			}
+		} else if strings.Contains(rkhunterOut, "not writable") {
+			// Log file permissions issue — not a security finding, surface the fix.
+			b.WriteString("❌ <b>rkhunter:</b> Log file not writable\n" +
+				"Fix: <code>sudo chmod 666 /var/log/rkhunter.log</code>\n\n")
 		} else {
-			// Tool error (permissions, not installed, etc.) — not a security finding
+			// Tool error (not installed, config issue, etc.) — not a security finding
 			msg := rkhunterOut
 			if msg == "" {
 				msg = err.Error()
@@ -908,7 +919,111 @@ func (w *TelegramBotWatcher) cmdServices() string {
 	}
 
 	b.WriteString(fmt.Sprintf("\n📊 %d services running", count))
+
+	if section := dockerContainerURLs(); section != "" {
+		b.WriteString("\n\n")
+		b.WriteString(section)
+	}
+
 	return b.String()
+}
+
+// dockerContainerURLs returns a formatted Docker section listing running
+// containers with their host port bindings as local access URLs.
+// Returns "" when Docker is unavailable or no containers are running.
+func dockerContainerURLs() string {
+	out, err := exec.Command("docker", "ps", "--format", "{{json .}}").Output()
+	if err != nil || len(strings.TrimSpace(string(out))) == 0 {
+		return ""
+	}
+
+	localIP := getLocalIP()
+
+	type entry struct {
+		name string
+		urls []string
+	}
+	var entries []entry
+
+	scanner := bufio.NewScanner(strings.NewReader(string(out)))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var c containerState
+		if err := json.Unmarshal([]byte(line), &c); err != nil {
+			continue
+		}
+		ports := parseHostPorts(c.Ports)
+		var urls []string
+		for _, p := range ports {
+			urls = append(urls, fmt.Sprintf(":%s → http://%s:%s", p, localIP, p))
+		}
+		entries = append(entries, entry{name: c.Names, urls: urls})
+	}
+
+	if len(entries) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("🐳 <b>Docker Containers</b>\n\n")
+	for _, e := range entries {
+		if len(e.urls) == 0 {
+			b.WriteString(fmt.Sprintf("  🐳 %s\n", e.name))
+		} else {
+			for _, u := range e.urls {
+				b.WriteString(fmt.Sprintf("  🐳 %s  %s\n", e.name, u))
+			}
+		}
+	}
+	return b.String()
+}
+
+// parseHostPorts extracts unique host-side ports from a Docker Ports string.
+// Input example: "0.0.0.0:8080->80/tcp, :::443->443/tcp"
+// Returns: ["8080", "443"]
+func parseHostPorts(ports string) []string {
+	seen := make(map[string]struct{})
+	var result []string
+	for _, segment := range strings.Split(ports, ",") {
+		segment = strings.TrimSpace(segment)
+		arrowIdx := strings.Index(segment, "->")
+		if arrowIdx < 0 {
+			continue
+		}
+		hostPart := segment[:arrowIdx]
+		colonIdx := strings.LastIndex(hostPart, ":")
+		if colonIdx < 0 {
+			continue
+		}
+		port := hostPart[colonIdx+1:]
+		if port == "" {
+			continue
+		}
+		if _, dup := seen[port]; dup {
+			continue
+		}
+		seen[port] = struct{}{}
+		result = append(result, port)
+	}
+	return result
+}
+
+// getLocalIP returns the first non-IPv6 address from `hostname -I`, falling
+// back to "localhost" if the command fails or produces no usable output.
+func getLocalIP() string {
+	out, err := exec.Command("hostname", "-I").Output()
+	if err != nil {
+		return "localhost"
+	}
+	for _, field := range strings.Fields(string(out)) {
+		if !strings.Contains(field, ":") {
+			return field
+		}
+	}
+	return "localhost"
 }
 
 func (w *TelegramBotWatcher) cmdReboot(parts []string) string {
@@ -924,6 +1039,11 @@ func (w *TelegramBotWatcher) cmdReboot(parts []string) string {
 	}()
 
 	return ""
+}
+
+func (w *TelegramBotWatcher) cmdDoctor() string {
+	results := doctor.New(w.Cfg, store.DefaultDBPath).Run()
+	return doctor.RenderTelegram(results)
 }
 
 // ── Helper functions ──

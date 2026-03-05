@@ -21,6 +21,7 @@ type Config struct {
 	FileIntegrity   FileIntegrityConfig  `yaml:"file_integrity"`
 	SecurityTools   SecurityToolsConfig  `yaml:"security_tools"`
 	Network         NetworkConfig        `yaml:"network"`
+	Connectivity    ConnectivityConfig   `yaml:"connectivity"`
 }
 
 type NotificationConfig struct {
@@ -135,6 +136,12 @@ type NetworkConfig struct {
 	IgnoreMACs   []string `yaml:"ignore_macs"`    // MACs to never alert on
 }
 
+type ConnectivityConfig struct {
+	Enabled      bool     `yaml:"enabled"`
+	PollInterval string   `yaml:"poll_interval"` // default: "30s"
+	Hosts        []string `yaml:"hosts"`          // TCP dial targets, e.g. "8.8.8.8:53"
+}
+
 // Load reads and parses the config file, expanding env vars
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
@@ -218,6 +225,11 @@ func DefaultConfig() *Config {
 			Enabled:      false,
 			PollInterval: "5m",
 			AlertOnLeave: false,
+		},
+		Connectivity: ConnectivityConfig{
+			Enabled:      true,
+			PollInterval: "30s",
+			Hosts:        []string{"8.8.8.8:53", "1.1.1.1:53"},
 		},
 	}
 }

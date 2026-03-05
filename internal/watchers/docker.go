@@ -18,11 +18,13 @@ import (
 )
 
 type containerState struct {
-	ID     string `json:"ID"`
-	Names  string `json:"Names"`
-	Image  string `json:"Image"`
-	State  string `json:"State"`  // "running", "exited", "paused", "restarting"
-	Status string `json:"Status"` // "Up 2 hours (healthy)", "Exited (1) 3 min ago"
+	ID      string `json:"ID"`
+	Names   string `json:"Names"`
+	Image   string `json:"Image"`
+	ImageID string `json:"ImageID"` // full image digest, e.g. "sha256:abc123..."
+	State   string `json:"State"`   // "running", "exited", "paused", "restarting"
+	Status  string `json:"Status"`  // "Up 2 hours (healthy)", "Exited (1) 3 min ago"
+	Ports   string `json:"Ports"`   // "0.0.0.0:8080->80/tcp, :::443->443/tcp"
 }
 
 // DockerWatcher polls for container lifecycle events.
@@ -30,6 +32,7 @@ type DockerWatcher struct {
 	Base
 	interval    time.Duration
 	baseline    map[string]containerState // container ID → last known state
+	nameToImage map[string]string         // container name → ImageID from previous cycle
 	runDockerPS func() ([]byte, error)    // injectable for tests
 }
 
@@ -39,9 +42,10 @@ func NewDockerWatcher(cfg *config.Config, bus *eventbus.Bus) *DockerWatcher {
 		interval = 10 * time.Second
 	}
 	w := &DockerWatcher{
-		Base:     Base{Cfg: cfg, Bus: bus},
-		interval: interval,
-		baseline: make(map[string]containerState),
+		Base:        Base{Cfg: cfg, Bus: bus},
+		interval:    interval,
+		baseline:    make(map[string]containerState),
+		nameToImage: make(map[string]string),
 	}
 	w.runDockerPS = func() ([]byte, error) {
 		return exec.Command("docker", "ps", "--all", "--no-trunc",
@@ -60,6 +64,7 @@ func (w *DockerWatcher) Start(ctx context.Context) error {
 	if containers, err := w.fetchContainers(); err == nil {
 		for _, c := range containers {
 			w.baseline[c.ID] = c
+			w.nameToImage[c.Names] = c.ImageID
 		}
 		slog.Info("docker baseline established", "count", len(w.baseline))
 	} else {
@@ -91,16 +96,29 @@ func (w *DockerWatcher) check() {
 		current[c.ID] = c
 	}
 
+	// Rebuild name→imageID for Watchtower detection on the NEXT cycle.
+	newNameToImage := make(map[string]string, len(containers))
+	for _, c := range containers {
+		newNameToImage[c.Names] = c.ImageID
+	}
+
 	hostname, _ := os.Hostname()
 
 	for id, c := range current {
 		prev, known := w.baseline[id]
 		if !known {
-			// Brand-new container — alert if it started running.
+			// Brand-new container ID — alert if it started running.
 			if c.State == "running" {
-				w.emit(hostname, models.EventContainerStart, models.SeverityInfo,
-					fmt.Sprintf("Container started: %s (%s)", c.Names, c.Image),
-					"", c)
+				// Watchtower replaces a container: same name reappears with a different image digest.
+				if prevImage, seen := w.nameToImage[c.Names]; seen && prevImage != "" && prevImage != c.ImageID {
+					w.emit(hostname, models.EventContainerUpdated, models.SeverityInfo,
+						fmt.Sprintf("Container updated: %s (%s)", c.Names, c.Image),
+						"", c)
+				} else {
+					w.emit(hostname, models.EventContainerStart, models.SeverityInfo,
+						fmt.Sprintf("Container started: %s (%s)", c.Names, c.Image),
+						"", c)
+				}
 			}
 			continue
 		}
@@ -130,6 +148,7 @@ func (w *DockerWatcher) check() {
 	}
 
 	w.baseline = current
+	w.nameToImage = newNameToImage
 }
 
 func (w *DockerWatcher) emit(hostname string, evType models.EventType, sev models.Severity,
