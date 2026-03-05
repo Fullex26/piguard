@@ -161,6 +161,31 @@ func (s *Store) GetState(key string) (string, error) {
 	return value, err
 }
 
+// GetEventCountByType returns event counts grouped by type for the last N days.
+func (s *Store) GetEventCountByType(days int) (map[string]int, error) {
+	since := time.Now().AddDate(0, 0, -days)
+	rows, err := s.db.Query(`
+		SELECT type, COUNT(*) FROM events
+		WHERE timestamp > ?
+		GROUP BY type
+		ORDER BY COUNT(*) DESC`, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]int)
+	for rows.Next() {
+		var evType string
+		var count int
+		if err := rows.Scan(&evType, &count); err != nil {
+			continue
+		}
+		result[evType] = count
+	}
+	return result, nil
+}
+
 // Prune removes events older than N days
 func (s *Store) Prune(days int) (int64, error) {
 	cutoff := time.Now().AddDate(0, 0, -days)

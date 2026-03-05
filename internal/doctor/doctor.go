@@ -135,6 +135,12 @@ func (r *Runner) Run() []CheckResult {
 		results = append(results, skip("Dependencies", "apt-get", "Auto-update disabled"))
 	}
 
+	if r.cfg != nil && r.cfg.AuthLog.Enabled {
+		results = append(results, r.checkAuthLog())
+	} else {
+		results = append(results, skip("Dependencies", "auth.log", "Auth log watcher disabled"))
+	}
+
 	return results
 }
 
@@ -332,6 +338,21 @@ func (r *Runner) checkAptGet() CheckResult {
 		}
 	}
 	return CheckResult{Category: "Dependencies", Name: "apt-get", Status: StatusOK, Message: "Available"}
+}
+
+func (r *Runner) checkAuthLog() CheckResult {
+	logPath := r.cfg.AuthLog.LogPath
+	if logPath == "" {
+		logPath = "/var/log/auth.log"
+	}
+	if !r.existsFn(logPath) {
+		return CheckResult{
+			Category: "Dependencies", Name: "auth.log",
+			Status: StatusWarn, Message: fmt.Sprintf("%s not found", logPath),
+			Fix: "sudo apt install rsyslog && sudo systemctl enable --now rsyslog",
+		}
+	}
+	return CheckResult{Category: "Dependencies", Name: "auth.log", Status: StatusOK, Message: "Log file exists"}
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────

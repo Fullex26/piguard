@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 
 	"github.com/Fullex26/piguard/internal/config"
@@ -109,4 +110,65 @@ func FormatDailySummary(hostname string, health models.SystemHealth, lastAlert s
 	}
 
 	return b.String()
+}
+
+// FormatWeeklyReport creates a weekly trend report comparing this week vs last week.
+func FormatWeeklyReport(hostname string, thisWeek, lastWeek map[string]int, totalThis, totalLast int, uptimeStr string) string {
+	var b strings.Builder
+
+	b.WriteString(fmt.Sprintf("📊 <b>PiGuard — %s — Weekly Report</b>\n\n", hostname))
+
+	// Total trend
+	trend := trendArrow(totalThis, totalLast)
+	b.WriteString(fmt.Sprintf("<b>Total events:</b> %d %s (last week: %d)\n", totalThis, trend, totalLast))
+	b.WriteString(fmt.Sprintf("<b>Uptime:</b> %s\n\n", uptimeStr))
+
+	// Top event types (sorted by this week's count)
+	type kv struct {
+		key   string
+		count int
+	}
+	var sorted []kv
+	seen := make(map[string]bool)
+	for k, v := range thisWeek {
+		sorted = append(sorted, kv{k, v})
+		seen[k] = true
+	}
+	for k, v := range lastWeek {
+		if !seen[k] {
+			sorted = append(sorted, kv{k, 0})
+			_ = v
+		}
+	}
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].count > sorted[j].count })
+
+	if len(sorted) > 0 {
+		b.WriteString("<b>Event breakdown:</b>\n")
+		limit := 10
+		if len(sorted) < limit {
+			limit = len(sorted)
+		}
+		for _, kv := range sorted[:limit] {
+			prev := lastWeek[kv.key]
+			trend := trendArrow(kv.count, prev)
+			b.WriteString(fmt.Sprintf("  • <code>%s</code>: %d %s\n", kv.key, kv.count, trend))
+		}
+	} else {
+		b.WriteString("✅ No events this week.\n")
+	}
+
+	return b.String()
+}
+
+func trendArrow(current, previous int) string {
+	if previous == 0 && current == 0 {
+		return "→"
+	}
+	if current > previous {
+		return "↑"
+	}
+	if current < previous {
+		return "↓"
+	}
+	return "→"
 }

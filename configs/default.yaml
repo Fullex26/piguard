@@ -56,6 +56,7 @@ system:
 alerts:
   min_severity: "warning"
   daily_summary: "08:00"
+  weekly_report: "sunday:20:00"
   quiet_hours:
     start: "23:00"
     end: "07:00"
@@ -121,6 +122,15 @@ auto_update:
   enabled: false
   day_of_week: "sunday"  # or "daily" for every day
   time: "03:00"          # 24-hour format
+
+# ── Auth log monitoring (SSH brute force / sudo failures) ──
+auth_log:
+  enabled: false
+  log_path: "/var/log/auth.log"
+  poll_interval: "10s"
+  brute_force_threshold: 5   # Failed attempts before Critical alert
+  brute_force_window: "5m"   # Sliding window for counting attempts
+  alert_on_login: false      # Set true to get Info alerts on successful SSH logins
 
 # ── Connectivity monitoring ──
 connectivity:

@@ -1,6 +1,9 @@
 package watchers
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestTelegramBotWatcher_Name(t *testing.T) {
 	w := &TelegramBotWatcher{}
@@ -78,11 +81,10 @@ func TestTruncate(t *testing.T) {
 func TestCmdReboot_RequiresConfirmation(t *testing.T) {
 	w := &TelegramBotWatcher{}
 	result := w.cmdReboot([]string{"/reboot"})
-	if result == "" {
-		t.Error("expected confirmation message")
-	}
-	if !containsString(result, "confirmation") && !containsString(result, "CONFIRM") {
-		t.Errorf("result should mention confirmation: %q", result)
+	// With inline keyboards, the no-confirm path sends a keyboard via sendReplyWithKeyboard
+	// and returns "" (the keyboard is sent separately via API)
+	if result != "" {
+		t.Errorf("expected empty string (keyboard sent separately), got %q", result)
 	}
 }
 
@@ -131,11 +133,9 @@ func TestCmdDockerRemove_NoName(t *testing.T) {
 func TestCmdDockerRemove_NoConfirm(t *testing.T) {
 	w := &TelegramBotWatcher{}
 	result := w.cmdDockerRemove([]string{"nginx"})
-	if !containsString(result, "CONFIRM") {
-		t.Errorf("expected CONFIRM prompt, got: %q", result)
-	}
-	if !containsString(result, "nginx") {
-		t.Errorf("expected container name in prompt, got: %q", result)
+	// With inline keyboards, no-confirm sends keyboard and returns ""
+	if result != "" {
+		t.Errorf("expected empty string (keyboard sent), got: %q", result)
 	}
 }
 
@@ -143,8 +143,9 @@ func TestCmdDockerRemove_WrongKeyword(t *testing.T) {
 	w := &TelegramBotWatcher{}
 	// A word other than CONFIRM should not satisfy the check.
 	result := w.cmdDockerRemove([]string{"nginx", "YES"})
-	if !containsString(result, "CONFIRM") {
-		t.Errorf("wrong keyword should not pass; expected CONFIRM prompt, got: %q", result)
+	// With inline keyboards, wrong keyword sends keyboard and returns ""
+	if result != "" {
+		t.Errorf("expected empty string (keyboard sent), got: %q", result)
 	}
 }
 
@@ -173,8 +174,9 @@ func TestCmdDockerLogs_NoName(t *testing.T) {
 func TestCmdDockerPrune_NoConfirm(t *testing.T) {
 	w := &TelegramBotWatcher{}
 	result := w.cmdDockerPrune([]string{})
-	if !containsString(result, "CONFIRM") {
-		t.Errorf("expected CONFIRM prompt, got: %q", result)
+	// With inline keyboards, no-confirm sends keyboard and returns ""
+	if result != "" {
+		t.Errorf("expected empty string (keyboard sent), got: %q", result)
 	}
 }
 
@@ -182,8 +184,9 @@ func TestCmdDockerPrune_WithWrongKeyword(t *testing.T) {
 	w := &TelegramBotWatcher{}
 	// A word other than CONFIRM should not satisfy the check.
 	result := w.cmdDockerPrune([]string{"YES"})
-	if !containsString(result, "CONFIRM") {
-		t.Errorf("wrong keyword should not pass; expected CONFIRM prompt, got: %q", result)
+	// With inline keyboards, wrong keyword sends keyboard and returns ""
+	if result != "" {
+		t.Errorf("expected empty string (keyboard sent), got: %q", result)
 	}
 }
 
@@ -245,6 +248,82 @@ func TestGetLocalIP_ReturnsNonEmpty(t *testing.T) {
 	ip := getLocalIP()
 	if ip == "" {
 		t.Error("getLocalIP() returned empty string")
+	}
+}
+
+// ── Inline keyboard tests ─────────────────────────────────────────────────────
+
+func TestHandleCallback_Dispatch(t *testing.T) {
+	// We can't fully test callbacks without a running Telegram API,
+	// but we verify the routing logic reaches command functions.
+	// The commands that exec docker/apt will fail in CI, but the point
+	// is that handleCallback routes correctly without panic.
+	w := &TelegramBotWatcher{}
+
+	knownCallbacks := []string{
+		"reboot:confirm",
+		"update:confirm",
+		"docker:prune",
+		"docker:rm:nginx",
+		"storage:images",
+		"storage:volumes",
+		"storage:apt",
+		"storage:all",
+	}
+
+	for _, data := range knownCallbacks {
+		t.Run(data, func(t *testing.T) {
+			// Should not panic
+			w.handleCallback("test-id", data)
+		})
+	}
+}
+
+func TestHandleCallback_Unknown(t *testing.T) {
+	w := &TelegramBotWatcher{}
+	// Should not panic on unknown callback data
+	w.handleCallback("test-id", "unknown:action")
+}
+
+func TestCallbackDataLength(t *testing.T) {
+	// Telegram limits callback_data to 64 bytes
+	codes := []string{
+		"reboot:confirm",
+		"update:confirm",
+		"docker:prune",
+		"docker:rm:very-long-container-name-here",
+		"storage:images",
+		"storage:volumes",
+		"storage:apt",
+		"storage:all",
+	}
+	for _, code := range codes {
+		if len(code) > 64 {
+			t.Errorf("callback data %q is %d bytes (max 64)", code, len(code))
+		}
+	}
+}
+
+func TestSendReplyWithKeyboard_JSON(t *testing.T) {
+	// Verify the InlineButton struct marshals correctly
+	buttons := [][]InlineButton{
+		{{Text: "Confirm", Data: "test:confirm"}},
+	}
+	keyboard := struct {
+		InlineKeyboard [][]InlineButton `json:"inline_keyboard"`
+	}{InlineKeyboard: buttons}
+
+	data, err := json.Marshal(keyboard)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	s := string(data)
+	if !containsString(s, "inline_keyboard") {
+		t.Errorf("expected inline_keyboard in JSON, got: %s", s)
+	}
+	if !containsString(s, "callback_data") {
+		t.Errorf("expected callback_data in JSON, got: %s", s)
 	}
 }
 
