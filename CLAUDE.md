@@ -52,7 +52,10 @@ Watchers → eventbus.Bus → Daemon subscriber → Deduplicator → Notifiers
 - `internal/eventbus` — simple goroutine-dispatched pub/sub (no channels, handlers run concurrently)
 - `internal/analysers` — `Deduplicator`: cooldown-based dedup; critical events always bypass
 - `internal/store` — SQLite wrapper; db at `/var/lib/piguard/events.db`
+- `internal/logging` — `Setup()` configures slog with optional file logging + rotation; `RotatingWriter` supports `TailLines()` for remote viewing
 - `internal/config` — YAML config with `os.ExpandEnv` substitution; `DefaultConfigPath = /etc/piguard/config.yaml`
+- `internal/doctor` — `piguard doctor` diagnostics: checks prerequisites, config validity, service status
+- `internal/setup` — interactive setup wizard: prompts for notifier credentials, writes config YAML + env file
 
 **Watchers currently implemented:**
 - `NetlinkWatcher` — real-time port monitoring via Linux netlink
@@ -60,7 +63,7 @@ Watchers → eventbus.Bus → Daemon subscriber → Deduplicator → Notifiers
 - `SystemWatcher` — disk/memory/CPU temp thresholds
 - `FileIntegrityWatcher` — inotify-based monitoring of critical system files (`/etc/passwd`, SSH config, sudoers, crontab, etc.)
 - `SecurityToolsWatcher` — tails ClamAV and rkhunter logs; fires Critical alerts on malware/rootkit findings
-- `TelegramBotWatcher` — interactive two-way bot commands (registered as a watcher, not a notifier); supports `/docker` subcommands (stop/restart/fix/logs/remove/prune)
+- `TelegramBotWatcher` — interactive two-way bot commands (registered as a watcher, not a notifier); supports `/docker` (stop/restart/fix/logs/remove/prune), `/storage`, `/services`, `/doctor`, `/updates`, `/update`, `/report`, `/pilog`; inline keyboard confirmations for destructive actions
 - `DockerWatcher` — polls `docker ps` for container lifecycle events (start/crash/stop/unhealthy)
 - `NetworkScanWatcher` — polls `ip neigh show` for new/departed ARP neighbours; alerts on unknown devices
 - `ConnectivityWatcher` — polls TCP hosts on an interval; fires events when connectivity is lost or restored
@@ -70,17 +73,18 @@ Watchers → eventbus.Bus → Daemon subscriber → Deduplicator → Notifiers
 ## CLI Subcommands
 
 ```bash
-piguard run [--config PATH]   # Start daemon (default config: /etc/piguard/config.yaml)
-piguard status                # Show events from last 24 h (reads SQLite directly)
-piguard test                  # Fire a test notification to all configured channels
-piguard setup [--env-file PATH] # Interactive wizard — creates config YAML + /etc/piguard/env
-piguard doctor                # Check system prerequisites and configuration health
-piguard version               # Print version string
+piguard run [--config PATH] [-v]  # Start daemon (default config: /etc/piguard/config.yaml; -v enables debug logging)
+piguard send "message"            # Send a message to Telegram (reads stdin if no arg or arg is '-')
+piguard status                    # Show events from last 24 h (reads SQLite directly)
+piguard test                      # Fire a test notification to all configured channels
+piguard setup [--env-file PATH]   # Interactive wizard — creates config YAML + /etc/piguard/env
+piguard doctor                    # Check system prerequisites and configuration health
+piguard version                   # Print version string
 ```
 
 ## Config
 
-Config file: `/etc/piguard/config.yaml` (dev: `configs/default.yaml`). Environment variables are expanded at load time (e.g., `${PIGUARD_TELEGRAM_TOKEN}`). At least one notification channel must be enabled or `config.Validate()` returns an error.
+Config file: `/etc/piguard/config.yaml` (dev: `configs/default.yaml`). Environment variables are expanded at load time (e.g., `${PIGUARD_TELEGRAM_TOKEN}`). At least one notification channel must be enabled or `config.Validate()` returns an error. Logging can be configured via `logging.level` (debug/info/warn/error), `logging.file` (path to log file), and `logging.max_size_mb` (rotation threshold, default 10).
 
 ## Adding a New Watcher or Notifier
 
@@ -88,6 +92,10 @@ Config file: `/etc/piguard/config.yaml` (dev: `configs/default.yaml`). Environme
 2. **Notifier**: Create a file in `internal/notifiers/`, implement the `Notifier` interface, add config fields to `internal/config/config.go`, and register in `daemon.New()`.
 
 New `EventType` constants belong in `pkg/models/events.go`.
+
+## Testing
+
+Tests use table-driven patterns with `t.Run`. Watchers are tested by injecting a mock `eventbus.Bus` and asserting on published events. Run `make test` (includes `-race`).
 
 ## Gotchas
 

@@ -19,8 +19,9 @@ import (
 // FirewallWatcher monitors iptables chains for unexpected changes
 type FirewallWatcher struct {
 	Base
-	baselines map[string]string // chain -> rule hash
-	interval  time.Duration
+	baselines    map[string]string // chain -> rule hash
+	interval     time.Duration
+	execIptables func(table, chain string) ([]byte, error)
 }
 
 func NewFirewallWatcher(cfg *config.Config, bus *eventbus.Bus) *FirewallWatcher {
@@ -33,6 +34,9 @@ func NewFirewallWatcher(cfg *config.Config, bus *eventbus.Bus) *FirewallWatcher 
 		Base:      Base{Cfg: cfg, Bus: bus},
 		baselines: make(map[string]string),
 		interval:  interval,
+		execIptables: func(table, chain string) ([]byte, error) {
+			return exec.Command("iptables", "-t", table, "-L", chain, "-n").Output()
+		},
 	}
 }
 
@@ -179,7 +183,7 @@ func (w *FirewallWatcher) checkDrift() {
 }
 
 func (w *FirewallWatcher) getRules(table, chain string) ([]string, error) {
-	out, err := exec.Command("iptables", "-t", table, "-L", chain, "-n").Output()
+	out, err := w.execIptables(table, chain)
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +195,7 @@ func (w *FirewallWatcher) getRules(table, chain string) ([]string, error) {
 }
 
 func (w *FirewallWatcher) getPolicy(table, chain string) string {
-	out, err := exec.Command("iptables", "-t", table, "-L", chain, "-n").Output()
+	out, err := w.execIptables(table, chain)
 	if err != nil {
 		return "UNKNOWN"
 	}

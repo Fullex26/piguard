@@ -20,6 +20,7 @@ import (
 	"github.com/Fullex26/piguard/internal/config"
 	"github.com/Fullex26/piguard/internal/doctor"
 	"github.com/Fullex26/piguard/internal/eventbus"
+	"github.com/Fullex26/piguard/internal/logging"
 	"github.com/Fullex26/piguard/internal/notifiers"
 	"github.com/Fullex26/piguard/internal/store"
 )
@@ -200,7 +201,7 @@ func (w *TelegramBotWatcher) handleCommand(text string) {
 		response = w.cmdServices()
 	case "/doctor":
 		response = w.cmdDoctor()
-	case "/updates":
+	case "/updates", "/upgrades":
 		response = w.cmdUpdates()
 	case "/update":
 		response = w.cmdUpdate(parts)
@@ -208,6 +209,8 @@ func (w *TelegramBotWatcher) handleCommand(text string) {
 		response = w.cmdStorageRouter(parts)
 	case "/report":
 		response = w.cmdReport()
+	case "/pilog":
+		response = w.cmdPilog()
 	case "/reboot":
 		response = w.cmdReboot(parts)
 	default:
@@ -352,11 +355,12 @@ func (w *TelegramBotWatcher) cmdHelp() string {
 /updates — Check available package upgrades
 /update CONFIRM — Run apt upgrade now
 
+<b>Diagnostics</b>
+/pilog — Tail PiGuard log file (last 30 lines)
+/doctor — Check PiGuard installation health
+
 <b>Reports</b>
 /report — On-demand weekly trend report
-
-<b>Diagnostics</b>
-/doctor — Check PiGuard installation health
 
 <b>Danger zone</b>
 /reboot CONFIRM — Reboot the Pi`
@@ -1163,6 +1167,28 @@ func getLocalIP() string {
 	return "localhost"
 }
 
+func (w *TelegramBotWatcher) cmdPilog() string {
+	rw := logging.ActiveWriter
+	if rw == nil {
+		return "File logging not configured.\nSet <code>logging.file</code> in config to enable."
+	}
+
+	tail, err := rw.TailLines(30)
+	if err != nil {
+		return fmt.Sprintf("❌ Failed to read log: %s", html.EscapeString(err.Error()))
+	}
+	if tail == "" {
+		return "Log file is empty."
+	}
+
+	// Telegram message limit is 4096 chars; reserve space for <pre> tags
+	const maxLen = 4080
+	if len(tail) > maxLen {
+		tail = tail[len(tail)-maxLen:]
+	}
+	return fmt.Sprintf("<pre>%s</pre>", html.EscapeString(tail))
+}
+
 func (w *TelegramBotWatcher) cmdReport() string {
 	if w.store == nil {
 		return "❌ Event store not available"
@@ -1217,9 +1243,10 @@ func (w *TelegramBotWatcher) cmdDoctor() string {
 }
 
 func (w *TelegramBotWatcher) cmdUpdates() string {
-	out, err := exec.Command("apt-get", "list", "--upgradable").CombinedOutput()
+	out, err := exec.Command("apt", "list", "--upgradable").CombinedOutput()
 	if err != nil {
-		return "❌ Failed to check for updates"
+		slog.Error("apt list --upgradable failed", "error", err, "output", string(out))
+		return fmt.Sprintf("❌ Failed to check for updates\n<code>%s</code>", html.EscapeString(truncate(string(out), 200)))
 	}
 
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")

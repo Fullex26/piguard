@@ -2,14 +2,17 @@ package main
 
 import (
 	"fmt"
-	"log/slog"
+	"io"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Fullex26/piguard/internal/config"
 	"github.com/Fullex26/piguard/internal/daemon"
 	"github.com/Fullex26/piguard/internal/doctor"
+	"github.com/Fullex26/piguard/internal/logging"
+	"github.com/Fullex26/piguard/internal/notifiers"
 	"github.com/Fullex26/piguard/internal/setup"
 	"github.com/Fullex26/piguard/internal/store"
 )
@@ -28,6 +31,7 @@ func main() {
 		runCmd(),
 		statusCmd(),
 		testCmd(),
+		sendCmd(),
 		setupCmd(),
 		versionCmd(),
 		doctorCmd(),
@@ -39,7 +43,8 @@ func main() {
 }
 
 func runCmd() *cobra.Command {
-	return &cobra.Command{
+	var verbose bool
+	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Start the PiGuard daemon",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -48,9 +53,13 @@ func runCmd() *cobra.Command {
 				return fmt.Errorf("loading config: %w", err)
 			}
 
-			slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-				Level: slog.LevelInfo,
-			})))
+			rw, err := logging.Setup(cfg.Logging, verbose)
+			if err != nil {
+				return fmt.Errorf("setting up logging: %w", err)
+			}
+			if rw != nil {
+				defer rw.Close()
+			}
 
 			d, err := daemon.New(cfg)
 			if err != nil {
@@ -58,6 +67,44 @@ func runCmd() *cobra.Command {
 			}
 
 			return d.Run()
+		},
+	}
+	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "enable debug-level logging")
+	return cmd
+}
+
+func sendCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "send [message]",
+		Short: "Send a message to Telegram",
+		Long:  "Send an arbitrary message to Telegram. Reads from stdin if no argument given or argument is '-'.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load(cfgPath)
+			if err != nil {
+				return fmt.Errorf("loading config: %w", err)
+			}
+
+			if !cfg.Notifications.Telegram.Enabled {
+				return fmt.Errorf("telegram is not enabled in config")
+			}
+
+			var msg string
+			if len(args) == 0 || (len(args) == 1 && args[0] == "-") {
+				data, err := io.ReadAll(os.Stdin)
+				if err != nil {
+					return fmt.Errorf("reading stdin: %w", err)
+				}
+				msg = strings.TrimSpace(string(data))
+			} else {
+				msg = strings.Join(args, " ")
+			}
+
+			if msg == "" {
+				return fmt.Errorf("message is empty")
+			}
+
+			tg := notifiers.NewTelegram(cfg.Notifications.Telegram)
+			return tg.SendRaw(msg)
 		},
 	}
 }

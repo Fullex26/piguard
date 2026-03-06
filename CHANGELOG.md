@@ -7,6 +7,38 @@ PiGuard uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.8.0] — 2026-03-06
+
+### Added
+- **`piguard send` CLI command** — send arbitrary messages to Telegram from the command line or scripts; supports positional args (`piguard send "msg"`), stdin piping (`echo "msg" | piguard send`), and explicit stdin (`piguard send -`); validates Telegram is enabled without starting the daemon or opening SQLite
+- **Persistent file logging** — new `logging` config section with `level` (debug/info/warn/error), `file` (path), and `max_size_mb` (rotation threshold, default 10 MB)
+  - Logs written to both stderr (journald) and the configured file via `io.MultiWriter`
+  - `RotatingWriter` with mutex-protected writes and single-backup rotation
+  - `TailLines(n)` method for remote viewing
+- **`--verbose` / `-v` flag** on `piguard run` — overrides log level to debug regardless of config
+- **Telegram `/pilog` command** — tails last 30 lines of the log file; output in `<pre>` tags, truncated to Telegram's 4096-char limit; reports "not configured" if file logging is disabled
+
+### Changed
+- **SystemWatcher** refactored with injectable `readMemInfo`, `readCPUTemp`, `statfsFunc` functions for testability
+- **FirewallWatcher** refactored with injectable `execIptables` function
+- **PortLabeller** refactored with injectable `readProcessName`, `resolveContainer` functions
+- **NetlinkWatcher** refactored with injectable `runSS` function
+
+### Fixed
+- **`/updates` command broken** — was calling `apt-get list --upgradable` which is not a valid `apt-get` subcommand (`list` belongs to `apt`, not `apt-get`); changed to `apt list --upgradable`; error message now includes the actual command output for debugging
+- **`/upgrades` alias added** — users typing `/upgrades` instead of `/updates` now get routed correctly instead of "Unknown command"
+- **`GetSystemHealth` nil panic** — the daily summary helper created a raw `SystemWatcher{}` struct literal, leaving the new injectable function fields as `nil`; now uses `NewSystemWatcher()` constructor to ensure all fields are initialised
+
+### Tests
+- ~74 new test functions across 8 files (3 new test files, 5 expanded)
+- New: `system_test.go` (16), `portlabel_test.go` (7), `logging_test.go` (10)
+- Expanded: `daemon_test.go` (+7), `firewall_test.go` (+14), `netlink_test.go` (+4), `telegram_bot_test.go` (+9), `events_test.go` (+7)
+- All tests pass with `-race` on all 11 packages
+
+[0.8.0]: https://github.com/Fullex26/piguard/releases/tag/v0.8.0
+
+---
+
 ## [0.7.0] — 2026-03-05
 
 ### Added

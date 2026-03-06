@@ -17,13 +17,19 @@ import (
 // SystemWatcher monitors disk, memory, CPU temperature
 type SystemWatcher struct {
 	Base
-	interval time.Duration
+	interval    time.Duration
+	readMemInfo func() ([]byte, error)
+	readCPUTemp func() ([]byte, error)
+	statfsFunc  func(string, *StatFS) error
 }
 
 func NewSystemWatcher(cfg *config.Config, bus *eventbus.Bus) *SystemWatcher {
 	return &SystemWatcher{
-		Base:     Base{Cfg: cfg, Bus: bus},
-		interval: 60 * time.Second,
+		Base:        Base{Cfg: cfg, Bus: bus},
+		interval:    60 * time.Second,
+		readMemInfo: func() ([]byte, error) { return os.ReadFile("/proc/meminfo") },
+		readCPUTemp: func() ([]byte, error) { return os.ReadFile("/sys/class/thermal/thermal_zone0/temp") },
+		statfsFunc:  statfs,
 	}
 }
 
@@ -97,20 +103,8 @@ func (w *SystemWatcher) check() {
 }
 
 func (w *SystemWatcher) getDiskUsage() int {
-	data, err := os.ReadFile("/proc/mounts")
-	if err != nil {
-		return 0
-	}
-
-	// Find root mount and check via statfs
-	_ = data // Use syscall.Statfs for accurate data
-	// Simplified: read from df output style via /proc
-	// In production, use syscall.Statfs("/", &stat)
-
-	// Fallback: parse /proc/diskstats or use syscall
-	// For now, simple approach via reading statvfs
 	var stat StatFS
-	if err := statfs("/", &stat); err != nil {
+	if err := w.statfsFunc("/", &stat); err != nil {
 		return 0
 	}
 
@@ -124,7 +118,7 @@ func (w *SystemWatcher) getDiskUsage() int {
 }
 
 func (w *SystemWatcher) getMemoryUsage() int {
-	data, err := os.ReadFile("/proc/meminfo")
+	data, err := w.readMemInfo()
 	if err != nil {
 		return 0
 	}
@@ -152,8 +146,7 @@ func (w *SystemWatcher) getMemoryUsage() int {
 }
 
 func (w *SystemWatcher) getCPUTemp() float64 {
-	// Pi thermal zone
-	data, err := os.ReadFile("/sys/class/thermal/thermal_zone0/temp")
+	data, err := w.readCPUTemp()
 	if err != nil {
 		return 0
 	}
@@ -166,7 +159,7 @@ func (w *SystemWatcher) getCPUTemp() float64 {
 
 // GetSystemHealth returns current system health snapshot (for daily summary)
 func GetSystemHealth(cfg *config.Config) models.SystemHealth {
-	w := &SystemWatcher{Base: Base{Cfg: cfg}}
+	w := NewSystemWatcher(cfg, nil)
 	return models.SystemHealth{
 		DiskUsagePercent:  w.getDiskUsage(),
 		MemoryUsedPercent: w.getMemoryUsage(),
