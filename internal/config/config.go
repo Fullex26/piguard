@@ -141,9 +141,11 @@ type NetworkConfig struct {
 }
 
 type AutoUpdateConfig struct {
-	Enabled   bool   `yaml:"enabled"`
-	DayOfWeek string `yaml:"day_of_week"` // "sunday", "monday", ... or "daily"
-	Time      string `yaml:"time"`        // "03:00" (24h format)
+	Enabled            bool   `yaml:"enabled"`
+	DayOfWeek          string `yaml:"day_of_week"`           // "sunday", "monday", ... or "daily"
+	Time               string `yaml:"time"`                  // "03:00" (24h format)
+	AutoReboot         bool   `yaml:"auto_reboot"`           // reboot automatically when reboot-required exists
+	RebootDelayMinutes int    `yaml:"reboot_delay_minutes"`  // minutes to wait before rebooting (default 5)
 }
 
 type ConnectivityConfig struct {
@@ -258,9 +260,11 @@ func DefaultConfig() *Config {
 			Hosts:        []string{"8.8.8.8:53", "1.1.1.1:53"},
 		},
 		AutoUpdate: AutoUpdateConfig{
-			Enabled:   false,
-			DayOfWeek: "sunday",
-			Time:      "03:00",
+			Enabled:            false,
+			DayOfWeek:          "sunday",
+			Time:               "03:00",
+			AutoReboot:         false,
+			RebootDelayMinutes: 5,
 		},
 		Logging: LoggingConfig{
 			Level:     "info",

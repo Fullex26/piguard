@@ -19,11 +19,13 @@ import (
 // AutoUpdateWatcher runs scheduled apt upgrades and publishes results as events.
 type AutoUpdateWatcher struct {
 	Base
-	dayOfWeek time.Weekday // -1 means daily
-	daily     bool
-	timeHHMM  string
-	runApt    func(args ...string) (string, error)
-	fileExist func(path string) bool
+	dayOfWeek  time.Weekday // -1 means daily
+	daily      bool
+	timeHHMM   string
+	runApt     func(args ...string) (string, error)
+	fileExist  func(path string) bool
+	runReboot  func() error
+	sleepFunc  func(d time.Duration)
 }
 
 func NewAutoUpdateWatcher(cfg *config.Config, bus *eventbus.Bus) *AutoUpdateWatcher {
@@ -51,6 +53,10 @@ func NewAutoUpdateWatcher(cfg *config.Config, bus *eventbus.Bus) *AutoUpdateWatc
 		_, err := os.Stat(path)
 		return err == nil
 	}
+	w.runReboot = func() error {
+		return exec.Command("reboot").Run()
+	}
+	w.sleepFunc = time.Sleep
 
 	return w
 }
@@ -143,9 +149,19 @@ func (w *AutoUpdateWatcher) runUpgrade() {
 
 	severity := models.SeverityInfo
 	suggested := ""
-	if rebootNeeded {
+	autoRebooting := rebootNeeded && w.Cfg.AutoUpdate.AutoReboot
+	if rebootNeeded && !autoRebooting {
 		severity = models.SeverityWarning
 		suggested = "Reboot needed — send /reboot CONFIRM via Telegram"
+	}
+	if autoRebooting {
+		delay := w.Cfg.AutoUpdate.RebootDelayMinutes
+		if delay <= 0 {
+			delay = 5
+		}
+		severity = models.SeverityWarning
+		msg += fmt.Sprintf(" — rebooting in %d min", delay)
+		suggested = fmt.Sprintf("Auto-reboot in %d minutes", delay)
 	}
 
 	w.Bus.Publish(models.Event{
@@ -159,6 +175,18 @@ func (w *AutoUpdateWatcher) runUpgrade() {
 		Suggested: suggested,
 		Source:    "auto-update",
 	})
+
+	if autoRebooting {
+		delay := w.Cfg.AutoUpdate.RebootDelayMinutes
+		if delay <= 0 {
+			delay = 5
+		}
+		slog.Info("auto-update: rebooting", "delay_minutes", delay)
+		w.sleepFunc(time.Duration(delay) * time.Minute)
+		if err := w.runReboot(); err != nil {
+			slog.Error("auto-update: reboot failed", "error", err)
+		}
+	}
 }
 
 // CheckAvailable runs `apt list --upgradable` and returns formatted output.
