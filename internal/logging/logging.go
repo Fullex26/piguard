@@ -23,7 +23,7 @@ type RotatingWriter struct {
 
 // NewRotatingWriter opens or creates the log file.
 func NewRotatingWriter(path string, maxSizeMB int) (*RotatingWriter, error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0640)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +61,7 @@ func (w *RotatingWriter) rotate() error {
 	if err := os.Rename(w.path, w.path+".1"); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(w.path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0640)
+	f, err := os.OpenFile(w.path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
 	}
