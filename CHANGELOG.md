@@ -7,6 +7,18 @@ PiGuard uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.9.0] — 2026-03-06
+
+### Added
+- **Auto-reboot after upgrade** — new `auto_reboot: true` option in the `auto_update` config section; when a scheduled (or on-demand) upgrade sets `/var/run/reboot-required`, PiGuard sends a Warning notification then waits `reboot_delay_minutes` (default 5) before issuing `reboot`; opt-in and disabled by default
+
+### Changed
+- `AutoUpdateWatcher` gains injectable `runReboot` and `sleepFunc` fields for testability; 3 new tests cover auto-reboot triggering, disabled-by-config, and no-reboot-required paths
+
+[0.9.0]: https://github.com/Fullex26/piguard/releases/tag/v0.9.0
+
+---
+
 ## [0.8.0] — 2026-03-06
 
 ### Added

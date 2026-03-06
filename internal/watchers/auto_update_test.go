@@ -288,3 +288,110 @@ func TestAutoUpdateWatcher_UpgradeFailAtUpgrade(t *testing.T) {
 		t.Errorf("expected EventSystemUpdateFailed, got %s", e.Type)
 	}
 }
+
+func TestAutoUpdateWatcher_AutoReboot_TriggersReboot(t *testing.T) {
+	cfg := &config.Config{
+		AutoUpdate: config.AutoUpdateConfig{
+			Enabled:            true,
+			DayOfWeek:          "daily",
+			Time:               "03:00",
+			AutoReboot:         true,
+			RebootDelayMinutes: 1,
+		},
+	}
+	bus := eventbus.New()
+	ch := make(chan models.Event, 10)
+	bus.Subscribe(func(e models.Event) { ch <- e })
+	w := NewAutoUpdateWatcher(cfg, bus)
+
+	w.runApt = func(args ...string) (string, error) {
+		if args[0] == "update" {
+			return "Hit:1", nil
+		}
+		return "2 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.", nil
+	}
+	w.fileExist = func(path string) bool { return path == "/var/run/reboot-required" }
+
+	var slept time.Duration
+	w.sleepFunc = func(d time.Duration) { slept = d }
+
+	rebootCalled := false
+	w.runReboot = func() error { rebootCalled = true; return nil }
+
+	w.runUpgrade()
+	e := awaitAutoUpdateEvent(t, ch)
+
+	if e.Severity != models.SeverityWarning {
+		t.Errorf("expected SeverityWarning, got %s", e.Severity)
+	}
+	if !strings.Contains(e.Message, "rebooting in") {
+		t.Errorf("expected reboot message, got: %s", e.Message)
+	}
+	if slept != 1*time.Minute {
+		t.Errorf("expected 1m sleep, got %v", slept)
+	}
+	if !rebootCalled {
+		t.Error("expected reboot to be called")
+	}
+}
+
+func TestAutoUpdateWatcher_AutoReboot_Disabled_NoReboot(t *testing.T) {
+	w, ch := newTestAutoUpdateWatcher() // auto_reboot defaults to false
+
+	w.runApt = func(args ...string) (string, error) {
+		if args[0] == "update" {
+			return "Hit:1", nil
+		}
+		return "1 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.", nil
+	}
+	w.fileExist = func(path string) bool { return path == "/var/run/reboot-required" }
+
+	rebootCalled := false
+	w.runReboot = func() error { rebootCalled = true; return nil }
+	w.sleepFunc = func(d time.Duration) {}
+
+	w.runUpgrade()
+	awaitAutoUpdateEvent(t, ch)
+
+	if rebootCalled {
+		t.Error("reboot should not be called when auto_reboot is false")
+	}
+}
+
+func TestAutoUpdateWatcher_AutoReboot_NotNeeded_NoReboot(t *testing.T) {
+	cfg := &config.Config{
+		AutoUpdate: config.AutoUpdateConfig{
+			Enabled:    true,
+			DayOfWeek:  "daily",
+			Time:       "03:00",
+			AutoReboot: true, // enabled, but reboot-required file won't exist
+		},
+	}
+	bus := eventbus.New()
+	ch := make(chan models.Event, 10)
+	bus.Subscribe(func(e models.Event) { ch <- e })
+	w := NewAutoUpdateWatcher(cfg, bus)
+
+	w.runApt = func(args ...string) (string, error) {
+		if args[0] == "update" {
+			return "Hit:1", nil
+		}
+		return "1 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.", nil
+	}
+	w.fileExist = func(path string) bool { return false } // no reboot-required
+
+	rebootCalled := false
+	w.runReboot = func() error { rebootCalled = true; return nil }
+	w.sleepFunc = func(d time.Duration) {}
+
+	w.runUpgrade()
+	e := awaitAutoUpdateEvent(t, ch)
+
+	if rebootCalled {
+		t.Error("reboot should not be called when reboot-required does not exist")
+	}
+	if e.Severity != models.SeverityInfo {
+		t.Errorf("expected SeverityInfo when no reboot needed, got %s", e.Severity)
+	}
+}
+
