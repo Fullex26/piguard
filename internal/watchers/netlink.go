@@ -27,6 +27,7 @@ type NetlinkWatcher struct {
 	labeller *analysers.PortLabeller
 	baseline map[string]models.PortInfo // addr -> port info
 	interval time.Duration
+	runSS    func() ([]byte, error)
 }
 
 func NewNetlinkWatcher(cfg *config.Config, bus *eventbus.Bus) *NetlinkWatcher {
@@ -35,6 +36,7 @@ func NewNetlinkWatcher(cfg *config.Config, bus *eventbus.Bus) *NetlinkWatcher {
 		labeller: analysers.NewPortLabeller(),
 		baseline: make(map[string]models.PortInfo),
 		interval: 2 * time.Second,
+		runSS:    func() ([]byte, error) { return exec.Command("ss", "-tlnp").Output() },
 	}
 }
 
@@ -103,8 +105,7 @@ func (w *NetlinkWatcher) check() {
 }
 
 func (w *NetlinkWatcher) scanPorts() ([]models.PortInfo, error) {
-	// Use ss -tlnp for TCP listening sockets
-	out, err := exec.Command("ss", "-tlnp").Output()
+	out, err := w.runSS()
 	if err != nil {
 		return nil, fmt.Errorf("running ss: %w", err)
 	}

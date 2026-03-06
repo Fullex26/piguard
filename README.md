@@ -52,6 +52,8 @@ sudo systemctl enable --now piguard
 - **Quiet hours**: Non-critical notifications suppressed during configurable window (default 23:00–07:00); Critical events always get through
 - **Weekly trend reports**: Automatic weekly summary with event breakdown and trend arrows; on-demand via Telegram `/report`
 - **Inline keyboard buttons**: Telegram destructive commands (reboot, update, docker prune, etc.) show tappable confirmation buttons
+- **File logging**: Persistent log file with configurable level (debug/info/warn/error) and automatic size-based rotation; remote log tailing via Telegram `/pilog`
+- **CLI messaging**: `piguard send "message"` sends arbitrary messages to Telegram from the command line or scripts (supports stdin piping)
 - **Daily summary**: 8am digest with full system status
 
 ## Works Best With
@@ -146,9 +148,10 @@ make deploy-pi PI_HOST=other-pi  # override host
 - [x] **v0.5** — Services dashboard + connectivity monitoring + diagnostics: Telegram `/services` with Docker port URLs; `ConnectivityWatcher` for internet outage alerts; `piguard doctor` CLI + Telegram `/doctor` for installation health checks; Watchtower update detection; SQLITE_BUSY and dual-stack dedup fixes
 - [x] **v0.6** — Auto-update support: scheduled `apt upgrade` with Telegram `/updates` check and `/update CONFIRM` on-demand trigger; reboot-required detection
 - [x] **v0.7** — Security hardening + UX polish: SSH/auth log watcher (brute force and failed sudo detection); quiet hours enforcement for non-critical alerts; Telegram inline keyboard buttons replacing CONFIRM text guards; weekly trend reports
-- [ ] **v0.8** — Embedded web dashboard
-- [ ] **v0.9** — Smart baselines with learning mode
-- [ ] **v0.10** — Plugin system, multi-host support, Prometheus metrics
+- [x] **v0.8** — Observability & testing: `piguard send` CLI for Telegram messaging, persistent file logging with configurable level and rotation, Telegram `/pilog` for remote log tailing, `--verbose` flag, comprehensive test suite expansion (~74 new tests with injectable function refactoring)
+- [ ] **v0.9** — Embedded web dashboard
+- [ ] **v0.10** — Smart baselines with learning mode
+- [ ] **v0.11** — Plugin system, multi-host support, Prometheus metrics
 - Far future: Built-in AI agent for intelligent anomaly correlation and natural-language security Q&A
 
 ## License

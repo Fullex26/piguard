@@ -12,7 +12,9 @@ import (
 
 // PortLabeller resolves port ownership: PID → process → container
 type PortLabeller struct {
-	containerCache map[int]containerInfo // PID -> container info
+	containerCache   map[int]containerInfo // PID -> container info
+	readProcessName  func(pid int) string
+	resolveContainer func(addr string) containerInfo
 }
 
 type containerInfo struct {
@@ -21,9 +23,17 @@ type containerInfo struct {
 }
 
 func NewPortLabeller() *PortLabeller {
-	return &PortLabeller{
+	l := &PortLabeller{
 		containerCache: make(map[int]containerInfo),
 	}
+	l.readProcessName = l.getProcessName
+	l.resolveContainer = l.resolveDockerContainer
+	return l
+}
+
+// ReadProcessNameFn overrides the process name resolution function (for testing).
+func (l *PortLabeller) ReadProcessNameFn(fn func(pid int) string) {
+	l.readProcessName = fn
 }
 
 // Label enriches a PortInfo with process and container details
@@ -34,12 +44,12 @@ func (l *PortLabeller) Label(port models.PortInfo) models.PortInfo {
 
 	// Resolve process name from /proc if not already set
 	if port.ProcessName == "" {
-		port.ProcessName = l.getProcessName(port.PID)
+		port.ProcessName = l.readProcessName(port.PID)
 	}
 
 	// If this is docker-proxy, resolve the actual container
 	if port.ProcessName == "docker-proxy" {
-		ci := l.resolveDockerContainer(port.Address)
+		ci := l.resolveContainer(port.Address)
 		port.ContainerName = ci.Name
 		port.ContainerID = ci.ID
 	}

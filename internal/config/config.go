@@ -24,6 +24,7 @@ type Config struct {
 	Connectivity    ConnectivityConfig   `yaml:"connectivity"`
 	AutoUpdate      AutoUpdateConfig     `yaml:"auto_update"`
 	AuthLog         AuthLogConfig        `yaml:"auth_log"`
+	Logging         LoggingConfig        `yaml:"logging"`
 }
 
 type NotificationConfig struct {
@@ -151,6 +152,12 @@ type ConnectivityConfig struct {
 	Hosts        []string `yaml:"hosts"`          // TCP dial targets, e.g. "8.8.8.8:53"
 }
 
+type LoggingConfig struct {
+	Level     string `yaml:"level"`       // "debug"/"info"/"warn"/"error", default "info"
+	File      string `yaml:"file"`        // default "" (disabled)
+	MaxSizeMB int    `yaml:"max_size_mb"` // default 10
+}
+
 type AuthLogConfig struct {
 	Enabled             bool   `yaml:"enabled"`
 	LogPath             string `yaml:"log_path"`              // default: "/var/log/auth.log"
@@ -254,6 +261,10 @@ func DefaultConfig() *Config {
 			Enabled:   false,
 			DayOfWeek: "sunday",
 			Time:      "03:00",
+		},
+		Logging: LoggingConfig{
+			Level:     "info",
+			MaxSizeMB: 10,
 		},
 		AuthLog: AuthLogConfig{
 			Enabled:             false,

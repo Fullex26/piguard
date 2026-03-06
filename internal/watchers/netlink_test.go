@@ -1,10 +1,14 @@
 package watchers
 
 import (
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/Fullex26/piguard/internal/analysers"
 	"github.com/Fullex26/piguard/internal/config"
 	"github.com/Fullex26/piguard/internal/eventbus"
+	"github.com/Fullex26/piguard/pkg/models"
 )
 
 func TestNetlinkWatcher_Name(t *testing.T) {
@@ -115,6 +119,151 @@ func TestMatchAddrPattern(t *testing.T) {
 				t.Errorf("matchAddrPattern(%q, %q) = %v, want %v", tt.addr, tt.pattern, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNetlinkWatcher_ScanPorts_Injectable(t *testing.T) {
+	cfg := &config.Config{
+		Ports: config.PortConfig{Ignore: []string{"127.0.0.1:*"}},
+	}
+	w := &NetlinkWatcher{
+		Base:     Base{Cfg: cfg, Bus: eventbus.New()},
+		labeller: analysers.NewPortLabeller(),
+		baseline: make(map[string]models.PortInfo),
+		runSS: func() ([]byte, error) {
+			return []byte("State  Recv-Q  Send-Q  Local Address:Port  Peer Address:Port  Process\n" +
+				"LISTEN 0 128 0.0.0.0:22 0.0.0.0:* users:((\"sshd\",pid=1234,fd=3))\n"), nil
+		},
+	}
+
+	ports, err := w.scanPorts()
+	if err != nil {
+		t.Fatalf("scanPorts: %v", err)
+	}
+	if len(ports) != 1 {
+		t.Fatalf("expected 1 port, got %d", len(ports))
+	}
+	if ports[0].Address != "0.0.0.0:22" {
+		t.Errorf("Address = %q, want %q", ports[0].Address, "0.0.0.0:22")
+	}
+}
+
+func TestNetlinkWatcher_Check_NewPortPublishesEvent(t *testing.T) {
+	bus := eventbus.New()
+	var captured []models.Event
+	var mu sync.Mutex
+	bus.Subscribe(func(e models.Event) {
+		mu.Lock()
+		defer mu.Unlock()
+		captured = append(captured, e)
+	})
+
+	cfg := &config.Config{
+		Ports: config.PortConfig{Ignore: []string{"127.0.0.1:*"}},
+	}
+	labeller := analysers.NewPortLabeller()
+	labeller.ReadProcessNameFn(func(pid int) string { return "test" })
+
+	w := &NetlinkWatcher{
+		Base:     Base{Cfg: cfg, Bus: bus},
+		labeller: labeller,
+		baseline: make(map[string]models.PortInfo),
+		runSS: func() ([]byte, error) {
+			return []byte("State  Recv-Q  Send-Q  Local Address:Port  Peer Address:Port  Process\n" +
+				"LISTEN 0 128 0.0.0.0:8080 0.0.0.0:* users:((\"node\",pid=5678,fd=4))\n"), nil
+		},
+	}
+
+	// baseline is empty, so 8080 should be "new"
+	w.check()
+	time.Sleep(50 * time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+	found := false
+	for _, e := range captured {
+		if e.Type == models.EventPortOpened {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected EventPortOpened for new port")
+	}
+}
+
+func TestNetlinkWatcher_Check_ClosedPortPublishesEvent(t *testing.T) {
+	bus := eventbus.New()
+	var captured []models.Event
+	var mu sync.Mutex
+	bus.Subscribe(func(e models.Event) {
+		mu.Lock()
+		defer mu.Unlock()
+		captured = append(captured, e)
+	})
+
+	cfg := &config.Config{
+		Ports: config.PortConfig{Ignore: []string{"127.0.0.1:*"}},
+	}
+
+	w := &NetlinkWatcher{
+		Base: Base{Cfg: cfg, Bus: bus},
+		labeller: analysers.NewPortLabeller(),
+		baseline: map[string]models.PortInfo{
+			"0.0.0.0:8080": {Address: "0.0.0.0:8080", ProcessName: "node"},
+		},
+		runSS: func() ([]byte, error) {
+			// Return empty — port is gone
+			return []byte("State  Recv-Q  Send-Q  Local Address:Port  Peer Address:Port  Process\n"), nil
+		},
+	}
+
+	w.check()
+	time.Sleep(50 * time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+	found := false
+	for _, e := range captured {
+		if e.Type == models.EventPortClosed {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected EventPortClosed for removed port")
+	}
+}
+
+func TestNetlinkWatcher_Check_IgnoredPortSkipped(t *testing.T) {
+	bus := eventbus.New()
+	var captured []models.Event
+	var mu sync.Mutex
+	bus.Subscribe(func(e models.Event) {
+		mu.Lock()
+		defer mu.Unlock()
+		captured = append(captured, e)
+	})
+
+	cfg := &config.Config{
+		Ports: config.PortConfig{Ignore: []string{"127.0.0.1:*"}},
+	}
+
+	w := &NetlinkWatcher{
+		Base:     Base{Cfg: cfg, Bus: bus},
+		labeller: analysers.NewPortLabeller(),
+		baseline: make(map[string]models.PortInfo),
+		runSS: func() ([]byte, error) {
+			return []byte("State  Recv-Q  Send-Q  Local Address:Port  Peer Address:Port  Process\n" +
+				"LISTEN 0 128 127.0.0.1:8080 0.0.0.0:*\n"), nil
+		},
+	}
+
+	w.check()
+	time.Sleep(50 * time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(captured) > 0 {
+		t.Errorf("expected no events for ignored port, got %d", len(captured))
 	}
 }
 
