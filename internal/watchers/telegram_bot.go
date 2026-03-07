@@ -225,9 +225,10 @@ func (w *TelegramBotWatcher) cmdHelp() string {
 func (w *TelegramBotWatcher) cmdStatus() string {
 	hostname, _ := os.Hostname()
 
+	// Read temperature first, before heavy shell-outs heat up the CPU.
+	temp := w.getTempStr()
 	disk := w.getDiskStr()
 	mem := w.getMemStr()
-	temp := w.getTempStr()
 	uptime := w.getUptimeStr()
 	containers := w.getContainerSummary()
 	ports := w.getPortCount()
