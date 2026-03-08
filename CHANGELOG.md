@@ -7,6 +7,15 @@ PiGuard uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.9.1] — 2026-03-08
+
+### Fixed
+- Fix duplicate v0.10 roadmap entry in README; add backup & service management descriptions
+
+[0.9.1]: https://github.com/Fullex26/piguard/releases/tag/v0.9.1
+
+---
+
 ## [0.9.0] — 2026-03-06
 
 ### Added
