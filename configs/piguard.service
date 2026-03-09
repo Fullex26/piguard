@@ -13,7 +13,7 @@ EnvironmentFile=-/etc/piguard/env
 # Security hardening
 NoNewPrivileges=false
 ProtectSystem=strict
-ReadWritePaths=/var/lib/piguard /var/log/piguard
+ReadWritePaths=/var/lib/piguard /var/log/piguard /tmp /var/cache/apt /var/lib/apt /var/lib/dpkg
 
 [Install]
 WantedBy=multi-user.target

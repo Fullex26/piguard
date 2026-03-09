@@ -81,10 +81,15 @@ func New(cfg *config.Config) (*Daemon, error) {
 		d.watchers = append(d.watchers, backupW)
 	}
 
+	// Auto-update watcher (always created so Telegram can toggle it at runtime)
+	autoUpdateW := watchers.NewAutoUpdateWatcher(cfg, bus)
+	d.watchers = append(d.watchers, autoUpdateW)
+
 	// Telegram interactive bot (two-way commands)
 	if cfg.Notifications.Telegram.Enabled {
 		tbot := watchers.NewTelegramBotWatcher(cfg, bus, db)
-		tbot.BackupWatcher = backupW // nil-safe; commands check for nil
+		tbot.BackupWatcher = backupW           // nil-safe; commands check for nil
+		tbot.AutoUpdateWatcher = autoUpdateW
 		d.watchers = append(d.watchers, tbot)
 	}
 	if cfg.SecurityTools.Enabled {
@@ -98,9 +103,6 @@ func New(cfg *config.Config) (*Daemon, error) {
 	}
 	if cfg.Connectivity.Enabled {
 		d.watchers = append(d.watchers, watchers.NewConnectivityWatcher(cfg, bus))
-	}
-	if cfg.AutoUpdate.Enabled {
-		d.watchers = append(d.watchers, watchers.NewAutoUpdateWatcher(cfg, bus))
 	}
 	if cfg.AuthLog.Enabled {
 		d.watchers = append(d.watchers, watchers.NewAuthLogWatcher(cfg, bus))
