@@ -48,6 +48,7 @@ sudo systemctl enable --now piguard
 - **Connectivity**: Polls configurable TCP probe hosts (default: `8.8.8.8:53`, `1.1.1.1:53`) every 30 s; fires Critical alert on outage and Info alert on recovery with outage duration
 - **Services dashboard**: Telegram `/services` shows running systemd services plus Docker containers with host port bindings as local access URLs
 - **Auto-update**: Scheduled `apt upgrade` with configurable day/time; Telegram `/updates` to check and `/update CONFIRM` to trigger on-demand; alerts on success/failure and reboot-required; optional `auto_reboot` sends a warning then reboots automatically after a configurable delay
+- **Backup**: Scheduled rsync backups to local USB or remote host; date-stamped directories with incremental `--link-dest`; configurable retention; pre-flight checks (rsync installed, destination reachable); Telegram `/backup` for status and `/backup now` for on-demand runs
 - **Auth log monitoring**: Watches `/var/log/auth.log` for SSH brute-force attempts (Critical alert on threshold), failed sudo authentication (Warning), and successful SSH logins (opt-in Info)
 - **Quiet hours**: Non-critical notifications suppressed during configurable window (default 23:00–07:00); Critical events always get through
 - **Weekly trend reports**: Automatic weekly summary with event breakdown and trend arrows; on-demand via Telegram `/report`
@@ -139,6 +140,22 @@ make deploy-pi                   # deploys to 'fullexpi' (default)
 make deploy-pi PI_HOST=other-pi  # override host
 ```
 
+## Documentation
+
+Full documentation is available in the [`docs/`](docs/README.md) directory:
+
+- [Getting Started](docs/getting-started.md) — installation, setup wizard, first run
+- [Configuration Reference](docs/configuration.md) — every config field explained
+- [Watchers](docs/watchers.md) — all 11 watchers with events, config, and examples
+- [Notifiers](docs/notifiers.md) — step-by-step setup for Telegram, Discord, ntfy, webhooks
+- [Telegram Bot Commands](docs/telegram-bot.md) — full command reference (20+ commands)
+- [CLI Reference](docs/cli.md) — all subcommands and flags
+- [Troubleshooting](docs/troubleshooting.md) — common issues and FAQ
+- [Upgrading](docs/upgrading.md) — upgrade methods and version migration notes
+- [Architecture](docs/architecture.md) — system design and data flow
+- [Developer Guide](docs/developing.md) — contributing, testing, adding watchers/notifiers
+- [Compatibility](docs/compatibility.md) — supported hardware, OS, and dependencies
+
 ## Roadmap
 
 - [x] **v0.1** — Port monitoring, firewall drift, system health, file integrity, ClamAV/rkhunter alerts, Telegram/Discord/ntfy/webhook notifiers
@@ -150,7 +167,7 @@ make deploy-pi PI_HOST=other-pi  # override host
 - [x] **v0.7** — Security hardening + UX polish: SSH/auth log watcher (brute force and failed sudo detection); quiet hours enforcement for non-critical alerts; Telegram inline keyboard buttons replacing CONFIRM text guards; weekly trend reports
 - [x] **v0.8** — Observability & testing: `piguard send` CLI for Telegram messaging, persistent file logging with configurable level and rotation, Telegram `/pilog` for remote log tailing, `--verbose` flag, comprehensive test suite expansion (~74 new tests with injectable function refactoring)
 - [x] **v0.9** — Auto-reboot after upgrade: configurable `auto_reboot` and `reboot_delay_minutes` in `auto_update` config; sends Warning notification then reboots after delay
-- [ ] **v0.10** — Backup system: scheduled rsync to USB drive or remote, Telegram `/backup now` and `/backup status` commands
+- [x] **v0.10** — Backup system: scheduled rsync to USB drive or remote, Telegram `/backup now` and `/backup status` commands
 - [ ] **v0.11** — Service management: Telegram `/service start|stop|restart|status <name>` for systemctl control
 - [ ] **v0.12** — Embedded web dashboard
 - [ ] **v0.13** — Smart baselines with learning mode

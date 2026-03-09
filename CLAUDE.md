@@ -6,6 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 PiGuard is a lightweight, event-driven host security monitor for Raspberry Pi and ARM SBCs, written in Go 1.24+. It watches for port changes, firewall drift, and system health issues, then sends alerts via Telegram, Discord, ntfy.sh, or webhooks.
 
+## Prerequisites
+
+- Go 1.24+ (pure-Go build, no C toolchain needed)
+- `golangci-lint` — auto-runs on every edit via hook (`brew install golangci-lint`)
+- `govulncheck` — auto-runs on `go.mod` changes (`go install golang.org/x/vuln/cmd/govulncheck@latest`)
+
 ## Build Commands
 
 ```bash
@@ -63,12 +69,13 @@ Watchers → eventbus.Bus → Daemon subscriber → Deduplicator → Notifiers
 - `SystemWatcher` — disk/memory/CPU temp thresholds
 - `FileIntegrityWatcher` — inotify-based monitoring of critical system files (`/etc/passwd`, SSH config, sudoers, crontab, etc.)
 - `SecurityToolsWatcher` — tails ClamAV and rkhunter logs; fires Critical alerts on malware/rootkit findings
-- `TelegramBotWatcher` — interactive two-way bot commands (registered as a watcher, not a notifier); supports `/docker` (stop/restart/fix/logs/remove/prune), `/storage`, `/services`, `/doctor`, `/updates`, `/update`, `/report`, `/pilog`; inline keyboard confirmations for destructive actions
+- `TelegramBotWatcher` — interactive two-way bot commands (registered as a watcher, not a notifier); supports `/docker` (stop/restart/fix/logs/remove/prune), `/storage`, `/services`, `/doctor`, `/updates`, `/update`, `/report`, `/pilog`, `/backup`; inline keyboard confirmations for destructive actions
 - `DockerWatcher` — polls `docker ps` for container lifecycle events (start/crash/stop/unhealthy)
 - `NetworkScanWatcher` — polls `ip neigh show` for new/departed ARP neighbours; alerts on unknown devices
 - `ConnectivityWatcher` — polls TCP hosts on an interval; fires events when connectivity is lost or restored
 - `AutoUpdateWatcher` — scheduled `apt-get update && apt-get upgrade -y` on configurable day/time; publishes success/failure events; detects reboot-required
 - `AuthLogWatcher` — monitors `/var/log/auth.log` for SSH brute-force attempts (sliding-window detection), failed sudo authentication, and successful SSH logins
+- `BackupWatcher` — scheduled rsync backups to local or remote destinations; date-stamped dirs with incremental `--link-dest`; retention cleanup; persists state to SQLite; exposes `RunBackup()` and `GetStatus()` for Telegram bot
 
 ## CLI Subcommands
 
@@ -88,7 +95,7 @@ Config file: `/etc/piguard/config.yaml` (dev: `configs/default.yaml`). Environme
 
 ## Adding a New Watcher or Notifier
 
-1. **Watcher**: Create a file in `internal/watchers/`, implement the `Watcher` interface, embed `Base` for `Cfg`/`Bus` access, and register it in `daemon.New()` (`internal/daemon/daemon.go`).
+1. **Watcher**: Create a file in `internal/watchers/`, implement the `Watcher` interface, embed `Base` for `Cfg`/`Bus` access, and register it in `daemon.New()` (`internal/daemon/daemon.go`). Some watchers need the SQLite store (e.g., `TelegramBotWatcher` for history queries) — pass `*store.Store` as an additional constructor arg and wire it in `daemon.New()`.
 2. **Notifier**: Create a file in `internal/notifiers/`, implement the `Notifier` interface, add config fields to `internal/config/config.go`, and register in `daemon.New()`.
 
 New `EventType` constants belong in `pkg/models/events.go`.
@@ -122,3 +129,9 @@ PiGuard runs as a systemd service (`configs/piguard.service`). The install scrip
 9. **After merge** — checkout main, pull, `git tag -a vX.Y.Z -m "vX.Y.Z" && git push --tags`.
 
 Do **not** push or tag without completing this checklist.
+
+## Claude Code Automations
+
+**Skills** (invoke with `/name`): `/new-watcher`, `/new-notifier`, `/release`, `/deploy-pi`, `/changelog`
+**Subagents**: `security-reviewer` (security audit), `test-coverage` (coverage gaps), `architecture-validator` (watcher/notifier convention checks)
+**Hooks**: PostToolUse auto-runs `golangci-lint` + package tests on edit; `govulncheck` on `go.mod` changes; PreToolUse blocks `.env`/`.pem`/`.key` edits

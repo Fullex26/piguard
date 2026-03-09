@@ -189,3 +189,11 @@ On `SIGINT` or `SIGTERM`:
 2. Implement `Notifier` interface.
 3. Add config fields to `internal/config/config.go`.
 4. Register in `daemon.New()`.
+
+---
+
+## See also
+
+- [Documentation Index](README.md)
+- [Developer Guide](developing.md) — dev setup, testing patterns, extension guides
+- [Compatibility Matrix](compatibility.md) — supported hardware, OS, and dependencies

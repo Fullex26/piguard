@@ -125,6 +125,19 @@ auto_update:
   auto_reboot: false          # reboot automatically when reboot-required exists after upgrade
   reboot_delay_minutes: 5     # minutes to wait before rebooting (sends warning first)
 
+# ── Backup ──
+backup:
+  enabled: false
+  sources:
+    - "/home"
+    - "/etc"
+    - "/var/lib/piguard"
+  destination: "/mnt/backup/piguard"   # local path or user@host:/path/to/backup
+  day_of_week: "daily"                  # or "sunday", "monday", etc.
+  time: "02:00"                         # 24-hour format
+  retention: 7                          # number of date-stamped backups to keep
+  # rsync_flags: "-avz --delete"       # optional override
+
 # ── Auth log monitoring (SSH brute force / sudo failures) ──
 auth_log:
   enabled: false
