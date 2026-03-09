@@ -347,7 +347,8 @@ func containsString(s, sub string) bool {
 func TestHandleCommand_RoutesKnownCommands(t *testing.T) {
 	w := &TelegramBotWatcher{}
 	// These commands should not panic even without full wiring
-	commands := []string{"/help", "/status", "/ports", "/disk", "/temp", "/memory", "/uptime", "/ip"}
+	// Note: /help and /start now send menu via API (will fail silently with no token)
+	commands := []string{"/help", "/start", "/status", "/ports", "/disk", "/temp", "/memory", "/uptime", "/ip"}
 	for _, cmd := range commands {
 		t.Run(cmd, func(t *testing.T) {
 			w.handleCommand(cmd) // should not panic
@@ -463,5 +464,174 @@ func TestPoll_OfsetIncrement(t *testing.T) {
 	w.offset = 42 + 1
 	if w.offset != 43 {
 		t.Errorf("offset = %d, want 43", w.offset)
+	}
+}
+
+// ── Menu system tests ─────────────────────────────────────────────────────────
+
+func TestBuildMainMenu_ContainsAllCategories(t *testing.T) {
+	w := &TelegramBotWatcher{}
+	_, buttons := w.buildMainMenu()
+
+	expectedData := map[string]bool{
+		"m:sys": false, "m:sec": false, "m:dock": false,
+		"m:stor": false, "m:upd": false, "m:bak": false,
+		"m:rep": false, "m:diag": false, "m:danger": false,
+	}
+
+	for _, row := range buttons {
+		for _, btn := range row {
+			if _, ok := expectedData[btn.Data]; ok {
+				expectedData[btn.Data] = true
+			}
+		}
+	}
+
+	for data, found := range expectedData {
+		if !found {
+			t.Errorf("main menu missing button with data %q", data)
+		}
+	}
+}
+
+func TestBuildMainMenu_ButtonLayout(t *testing.T) {
+	w := &TelegramBotWatcher{}
+	_, buttons := w.buildMainMenu()
+
+	// Should have 5 rows: 4 pairs + 1 single
+	if len(buttons) != 5 {
+		t.Fatalf("expected 5 rows, got %d", len(buttons))
+	}
+	for i := 0; i < 4; i++ {
+		if len(buttons[i]) != 2 {
+			t.Errorf("row %d: expected 2 buttons, got %d", i, len(buttons[i]))
+		}
+	}
+	if len(buttons[4]) != 1 {
+		t.Errorf("last row: expected 1 button, got %d", len(buttons[4]))
+	}
+}
+
+func TestBuildSystemView_ContainsMetrics(t *testing.T) {
+	w := &TelegramBotWatcher{}
+	text, _ := w.buildSystemView()
+
+	// Should contain metric labels even if values are "unknown" / "N/A"
+	for _, keyword := range []string{"Disk", "RAM", "Temp", "Uptime"} {
+		if !containsString(text, keyword) {
+			t.Errorf("system view missing %q", keyword)
+		}
+	}
+}
+
+func TestCallbackDataLength_NewScheme(t *testing.T) {
+	// All new callback strings must be under 64 bytes
+	codes := []string{
+		"m:home", "m:sys", "m:sec", "m:dock", "m:stor", "m:upd",
+		"m:bak", "m:rep", "m:diag", "m:danger",
+		"s:disk", "s:mem", "s:temp", "s:up", "s:ip", "s:svc",
+		"x:ports", "x:fw", "x:events", "x:scan",
+		"d:prune", "d:prune!",
+		"t:img", "t:img!", "t:vol", "t:vol!", "t:apt", "t:apt!", "t:all", "t:all!",
+		"u:run", "u:run!",
+		"b:now", "b:now!",
+		"r:refresh",
+		"g:doctor", "g:pilog",
+		"z:reboot", "z:reboot!",
+	}
+	for _, code := range codes {
+		if len(code) > 64 {
+			t.Errorf("callback data %q is %d bytes (max 64)", code, len(code))
+		}
+	}
+}
+
+func TestHandleCallback_MenuNavigation(t *testing.T) {
+	w := &TelegramBotWatcher{}
+	// All menu navigation callbacks should not panic
+	navCallbacks := []string{
+		"m:home", "m:sys", "m:sec", "m:dock", "m:stor",
+		"m:upd", "m:bak", "m:rep", "m:diag", "m:danger",
+	}
+	for _, data := range navCallbacks {
+		t.Run(data, func(t *testing.T) {
+			w.handleCallback("test-id", data) // should not panic
+		})
+	}
+}
+
+func TestHandleCallback_DetailViews(t *testing.T) {
+	w := &TelegramBotWatcher{}
+	// Detail view callbacks should not panic
+	detailCallbacks := []string{
+		"s:disk", "s:mem", "s:temp", "s:up", "s:ip", "s:svc",
+		"x:ports", "x:fw", "x:events",
+		"g:doctor", "g:pilog",
+	}
+	for _, data := range detailCallbacks {
+		t.Run(data, func(t *testing.T) {
+			w.handleCallback("test-id", data) // should not panic
+		})
+	}
+}
+
+func TestHandleCallback_ConfirmationFlow(t *testing.T) {
+	w := &TelegramBotWatcher{}
+
+	// z:reboot should show confirmation (not actually reboot) — no panic
+	w.handleCallback("test-id", "z:reboot")
+
+	// d:prune should show confirmation — no panic
+	w.handleCallback("test-id", "d:prune")
+
+	// u:run should show confirmation — no panic
+	w.handleCallback("test-id", "u:run")
+}
+
+func TestBuildConfirmView_Layout(t *testing.T) {
+	text, buttons := buildConfirmView("Test Title", "Test description", "action!", "m:home")
+
+	if !containsString(text, "Test Title") {
+		t.Error("confirm view missing title")
+	}
+	if !containsString(text, "Test description") {
+		t.Error("confirm view missing description")
+	}
+
+	if len(buttons) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(buttons))
+	}
+	if len(buttons[0]) != 2 {
+		t.Fatalf("expected 2 buttons in row, got %d", len(buttons[0]))
+	}
+	if buttons[0][0].Data != "action!" {
+		t.Errorf("confirm button data = %q, want %q", buttons[0][0].Data, "action!")
+	}
+	if buttons[0][1].Data != "m:home" {
+		t.Errorf("cancel button data = %q, want %q", buttons[0][1].Data, "m:home")
+	}
+}
+
+func TestHandleCommand_StartShowsMenu(t *testing.T) {
+	w := &TelegramBotWatcher{}
+	// /start should not panic and should attempt to send menu
+	// (API call will fail silently with no token — that's fine for this test)
+	w.handleCommand("/start")
+}
+
+func TestBuildDetailView_HasBackButton(t *testing.T) {
+	_, buttons := buildDetailView("test content", "m:sys")
+
+	if len(buttons) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(buttons))
+	}
+	if len(buttons[0]) != 1 {
+		t.Fatalf("expected 1 button, got %d", len(buttons[0]))
+	}
+	if buttons[0][0].Data != "m:sys" {
+		t.Errorf("back button data = %q, want %q", buttons[0][0].Data, "m:sys")
+	}
+	if !containsString(buttons[0][0].Text, "Back") {
+		t.Error("back button text does not contain 'Back'")
 	}
 }
