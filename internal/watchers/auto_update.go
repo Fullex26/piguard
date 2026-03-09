@@ -65,7 +65,8 @@ func (w *AutoUpdateWatcher) Name() string { return "auto-update" }
 func (w *AutoUpdateWatcher) Stop() error  { return nil }
 
 func (w *AutoUpdateWatcher) Start(ctx context.Context) error {
-	slog.Info("starting auto-update watcher", "day", w.Cfg.AutoUpdate.DayOfWeek, "time", w.timeHHMM)
+	slog.Info("starting auto-update watcher", "day", w.Cfg.AutoUpdate.DayOfWeek, "time", w.timeHHMM,
+		"enabled", w.Cfg.AutoUpdate.Enabled)
 
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
@@ -75,11 +76,62 @@ func (w *AutoUpdateWatcher) Start(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			if w.isScheduleMatch(time.Now()) {
+			if w.Cfg.AutoUpdate.Enabled && w.isScheduleMatch(time.Now()) {
 				w.runUpgrade()
 			}
 		}
 	}
+}
+
+// SetDay updates the schedule day at runtime. Accepts "daily", "sunday", "monday", etc.
+func (w *AutoUpdateWatcher) SetDay(day string) {
+	d := strings.ToLower(day)
+	if d == "daily" || d == "" {
+		w.daily = true
+	} else {
+		w.daily = false
+		w.dayOfWeek = parseWeekday(d)
+	}
+	w.Cfg.AutoUpdate.DayOfWeek = day
+}
+
+// SetTime updates the schedule time at runtime. Format: "HH:MM" (24h).
+func (w *AutoUpdateWatcher) SetTime(t string) {
+	w.timeHHMM = t
+	w.Cfg.AutoUpdate.Time = t
+}
+
+// SetAutoReboot toggles automatic reboot after updates at runtime.
+func (w *AutoUpdateWatcher) SetAutoReboot(enabled bool) {
+	w.Cfg.AutoUpdate.AutoReboot = enabled
+}
+
+// SetEnabled toggles the auto-update watcher on/off at runtime.
+func (w *AutoUpdateWatcher) SetEnabled(enabled bool) {
+	w.Cfg.AutoUpdate.Enabled = enabled
+}
+
+// GetStatus returns a formatted string describing the current auto-update configuration.
+func (w *AutoUpdateWatcher) GetStatus() string {
+	if !w.Cfg.AutoUpdate.Enabled {
+		return "⏰ <b>Auto-Update</b>\n\n❌ Disabled"
+	}
+
+	day := w.Cfg.AutoUpdate.DayOfWeek
+	if day == "" {
+		day = "daily"
+	}
+
+	reboot := "off"
+	if w.Cfg.AutoUpdate.AutoReboot {
+		reboot = fmt.Sprintf("on (%d min delay)", w.Cfg.AutoUpdate.RebootDelayMinutes)
+	}
+
+	return fmt.Sprintf("⏰ <b>Auto-Update</b>\n\n"+
+		"  ✅ Enabled\n"+
+		"  📅 Schedule: %s at %s\n"+
+		"  🔄 Auto-reboot: %s",
+		capitalise(day), w.timeHHMM, reboot)
 }
 
 func (w *AutoUpdateWatcher) isScheduleMatch(now time.Time) bool {
@@ -230,6 +282,14 @@ func parseWeekday(s string) time.Weekday {
 	default:
 		return time.Sunday
 	}
+}
+
+// capitalise returns s with the first letter uppercased.
+func capitalise(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 // truncateStr limits a string to max bytes (used for event details).

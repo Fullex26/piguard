@@ -34,8 +34,9 @@ type TelegramBotWatcher struct {
 	offset         int
 	labeller       *analysers.PortLabeller
 	store          *store.Store
-	BackupWatcher  *BackupWatcher // nil when backup is disabled
-	lastMenuMsgID  int            // message_id of current navigation message (for edit-in-place)
+	BackupWatcher      *BackupWatcher      // nil when backup is disabled
+	AutoUpdateWatcher  *AutoUpdateWatcher  // always set; toggled via Telegram
+	lastMenuMsgID      int                 // message_id of current navigation message (for edit-in-place)
 }
 
 func NewTelegramBotWatcher(cfg *config.Config, bus *eventbus.Bus, db *store.Store) *TelegramBotWatcher {
@@ -221,6 +222,8 @@ func (w *TelegramBotWatcher) handleCommand(text string) {
 		response = w.cmdReboot(parts)
 	case "/backup":
 		response = w.cmdBackupRouter(parts)
+	case "/autoupdate":
+		response = w.cmdAutoUpdateRouter(parts)
 	default:
 		response = fmt.Sprintf("Unknown command: %s\nSend /help for available commands.", cmd)
 	}
@@ -446,6 +449,9 @@ func (w *TelegramBotWatcher) handleCallback(callbackID, data string) {
 		return
 	case strings.HasPrefix(data, "z:"):
 		w.handleDangerAction(data)
+		return
+	case strings.HasPrefix(data, "a:"):
+		w.handleAutoUpdateAction(data)
 		return
 	}
 
@@ -1658,6 +1664,266 @@ func (w *TelegramBotWatcher) cmdBackupNow(args []string) string {
 	return ""
 }
 
+// ── Auto-update commands ──
+
+func (w *TelegramBotWatcher) cmdAutoUpdateRouter(parts []string) string {
+	if w.AutoUpdateWatcher == nil {
+		return "❌ Auto-update watcher not available"
+	}
+
+	if len(parts) < 2 {
+		return w.AutoUpdateWatcher.GetStatus()
+	}
+
+	switch strings.ToLower(parts[1]) {
+	case "on":
+		w.AutoUpdateWatcher.SetEnabled(true)
+		w.persistAutoUpdateConfig()
+		return "✅ Auto-update <b>enabled</b>"
+	case "off":
+		w.AutoUpdateWatcher.SetEnabled(false)
+		w.persistAutoUpdateConfig()
+		return "❌ Auto-update <b>disabled</b>"
+	case "day":
+		if len(parts) < 3 {
+			return "Usage: /autoupdate day &lt;daily|sunday|monday|...&gt;"
+		}
+		day := strings.ToLower(parts[2])
+		valid := map[string]bool{
+			"daily": true, "sunday": true, "monday": true, "tuesday": true,
+			"wednesday": true, "thursday": true, "friday": true, "saturday": true,
+		}
+		if !valid[day] {
+			return "❌ Invalid day. Use: daily, sunday, monday, tuesday, wednesday, thursday, friday, saturday"
+		}
+		w.AutoUpdateWatcher.SetDay(day)
+		w.persistAutoUpdateConfig()
+		return fmt.Sprintf("📅 Auto-update day set to <b>%s</b>", capitalise(day))
+	case "time":
+		if len(parts) < 3 {
+			return "Usage: /autoupdate time &lt;HH:MM&gt;"
+		}
+		t := parts[2]
+		if !isValidTime(t) {
+			return "❌ Invalid time. Use 24h format: HH:MM (e.g. 03:00)"
+		}
+		w.AutoUpdateWatcher.SetTime(t)
+		w.persistAutoUpdateConfig()
+		return fmt.Sprintf("🕐 Auto-update time set to <b>%s</b>", t)
+	case "reboot":
+		if len(parts) < 3 {
+			return "Usage: /autoupdate reboot &lt;on|off&gt;"
+		}
+		switch strings.ToLower(parts[2]) {
+		case "on":
+			w.AutoUpdateWatcher.SetAutoReboot(true)
+			w.persistAutoUpdateConfig()
+			return "🔄 Auto-reboot <b>enabled</b>"
+		case "off":
+			w.AutoUpdateWatcher.SetAutoReboot(false)
+			w.persistAutoUpdateConfig()
+			return "🔄 Auto-reboot <b>disabled</b>"
+		default:
+			return "Usage: /autoupdate reboot &lt;on|off&gt;"
+		}
+	default:
+		return w.AutoUpdateWatcher.GetStatus() + "\n\n<i>Commands: /autoupdate [on|off|day|time|reboot]</i>"
+	}
+}
+
+// isValidTime checks if a string is valid HH:MM 24h format.
+func isValidTime(s string) bool {
+	if len(s) != 5 || s[2] != ':' {
+		return false
+	}
+	h, err1 := strconv.Atoi(s[:2])
+	m, err2 := strconv.Atoi(s[3:])
+	return err1 == nil && err2 == nil && h >= 0 && h <= 23 && m >= 0 && m <= 59
+}
+
+// persistAutoUpdateConfig writes the current auto-update settings to the config file.
+func (w *TelegramBotWatcher) persistAutoUpdateConfig() {
+	configPath := config.DefaultConfigPath
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		slog.Error("failed to read config for auto-update persistence", "error", err)
+		return
+	}
+
+	content := string(data)
+	cfg := w.Cfg.AutoUpdate
+
+	// Build the desired auto_update block
+	newBlock := fmt.Sprintf("auto_update:\n  enabled: %t\n  day_of_week: %q\n  time: %q\n  auto_reboot: %t\n  reboot_delay_minutes: %d\n",
+		cfg.Enabled, cfg.DayOfWeek, cfg.Time, cfg.AutoReboot, cfg.RebootDelayMinutes)
+
+	// Find and replace existing block, or append
+	if idx := strings.Index(content, "auto_update:"); idx >= 0 {
+		// Find the end of the block (next top-level key or EOF)
+		blockEnd := len(content)
+		lines := strings.Split(content[idx:], "\n")
+		offset := idx
+		for i, line := range lines {
+			if i == 0 {
+				offset += len(line) + 1
+				continue
+			}
+			// A non-empty line not starting with space = next top-level key
+			if len(line) > 0 && line[0] != ' ' && line[0] != '#' {
+				blockEnd = offset
+				break
+			}
+			offset += len(line) + 1
+		}
+		content = content[:idx] + newBlock + content[blockEnd:]
+	} else {
+		// Append to end
+		content += "\n" + newBlock
+	}
+
+	if err := os.WriteFile(configPath, []byte(content), 0600); err != nil {
+		slog.Error("failed to write config for auto-update persistence", "error", err)
+	}
+}
+
+// buildAutoUpdateView returns the auto-update settings view with action buttons.
+func (w *TelegramBotWatcher) buildAutoUpdateView() (string, [][]InlineButton) {
+	var text string
+	if w.AutoUpdateWatcher != nil {
+		text = w.AutoUpdateWatcher.GetStatus()
+	} else {
+		text = "⏰ <b>Auto-Update</b>\n\n❌ Not available"
+	}
+
+	enableLabel := "✅ Disable"
+	enableData := "a:off"
+	if !w.Cfg.AutoUpdate.Enabled {
+		enableLabel = "❌ Enable"
+		enableData = "a:on"
+	}
+
+	rebootLabel := "🔄 Reboot: Off"
+	rebootData := "a:reboot:on"
+	if w.Cfg.AutoUpdate.AutoReboot {
+		rebootLabel = "🔄 Reboot: On"
+		rebootData = "a:reboot:off"
+	}
+
+	buttons := [][]InlineButton{
+		{{Text: enableLabel, Data: enableData}, {Text: rebootLabel, Data: rebootData}},
+		{{Text: "📅 Day", Data: "a:day"}, {Text: "🕐 Time", Data: "a:time"}},
+		{{Text: "◀️ Back", Data: "m:upd"}},
+	}
+
+	return text, buttons
+}
+
+// buildAutoUpdateDayPicker returns a day selection view.
+func (w *TelegramBotWatcher) buildAutoUpdateDayPicker() (string, [][]InlineButton) {
+	current := w.Cfg.AutoUpdate.DayOfWeek
+	if current == "" {
+		current = "daily"
+	}
+	text := fmt.Sprintf("📅 <b>Select Update Day</b>\n\nCurrent: <b>%s</b>", capitalise(current))
+
+	buttons := [][]InlineButton{
+		{{Text: "📆 Daily", Data: "a:day:daily"}, {Text: "Sun", Data: "a:day:sun"}, {Text: "Mon", Data: "a:day:mon"}},
+		{{Text: "Tue", Data: "a:day:tue"}, {Text: "Wed", Data: "a:day:wed"}, {Text: "Thu", Data: "a:day:thu"}},
+		{{Text: "Fri", Data: "a:day:fri"}, {Text: "Sat", Data: "a:day:sat"}},
+		{{Text: "◀️ Back", Data: "a:home"}},
+	}
+
+	return text, buttons
+}
+
+// buildAutoUpdateTimePicker returns a time selection view with common presets.
+func (w *TelegramBotWatcher) buildAutoUpdateTimePicker() (string, [][]InlineButton) {
+	current := w.Cfg.AutoUpdate.Time
+	if current == "" {
+		current = "03:00"
+	}
+	text := fmt.Sprintf("🕐 <b>Select Update Time</b>\n\nCurrent: <b>%s</b>\n\nOr use: <code>/autoupdate time HH:MM</code>", current)
+
+	buttons := [][]InlineButton{
+		{{Text: "01:00", Data: "a:time:01:00"}, {Text: "02:00", Data: "a:time:02:00"}, {Text: "03:00", Data: "a:time:03:00"}},
+		{{Text: "04:00", Data: "a:time:04:00"}, {Text: "05:00", Data: "a:time:05:00"}, {Text: "06:00", Data: "a:time:06:00"}},
+		{{Text: "◀️ Back", Data: "a:home"}},
+	}
+
+	return text, buttons
+}
+
+// handleAutoUpdateAction routes auto-update button presses.
+func (w *TelegramBotWatcher) handleAutoUpdateAction(data string) {
+	switch {
+	case data == "a:home":
+		text, buttons := w.buildAutoUpdateView()
+		w.editMessage(w.lastMenuMsgID, text, buttons)
+
+	case data == "a:on":
+		if w.AutoUpdateWatcher != nil {
+			w.AutoUpdateWatcher.SetEnabled(true)
+			w.persistAutoUpdateConfig()
+		}
+		text, buttons := w.buildAutoUpdateView()
+		w.editMessage(w.lastMenuMsgID, text, buttons)
+
+	case data == "a:off":
+		if w.AutoUpdateWatcher != nil {
+			w.AutoUpdateWatcher.SetEnabled(false)
+			w.persistAutoUpdateConfig()
+		}
+		text, buttons := w.buildAutoUpdateView()
+		w.editMessage(w.lastMenuMsgID, text, buttons)
+
+	case data == "a:reboot:on":
+		if w.AutoUpdateWatcher != nil {
+			w.AutoUpdateWatcher.SetAutoReboot(true)
+			w.persistAutoUpdateConfig()
+		}
+		text, buttons := w.buildAutoUpdateView()
+		w.editMessage(w.lastMenuMsgID, text, buttons)
+
+	case data == "a:reboot:off":
+		if w.AutoUpdateWatcher != nil {
+			w.AutoUpdateWatcher.SetAutoReboot(false)
+			w.persistAutoUpdateConfig()
+		}
+		text, buttons := w.buildAutoUpdateView()
+		w.editMessage(w.lastMenuMsgID, text, buttons)
+
+	case data == "a:day":
+		text, buttons := w.buildAutoUpdateDayPicker()
+		w.editMessage(w.lastMenuMsgID, text, buttons)
+
+	case strings.HasPrefix(data, "a:day:"):
+		dayCode := strings.TrimPrefix(data, "a:day:")
+		dayMap := map[string]string{
+			"daily": "daily", "sun": "sunday", "mon": "monday", "tue": "tuesday",
+			"wed": "wednesday", "thu": "thursday", "fri": "friday", "sat": "saturday",
+		}
+		if day, ok := dayMap[dayCode]; ok && w.AutoUpdateWatcher != nil {
+			w.AutoUpdateWatcher.SetDay(day)
+			w.persistAutoUpdateConfig()
+		}
+		text, buttons := w.buildAutoUpdateView()
+		w.editMessage(w.lastMenuMsgID, text, buttons)
+
+	case data == "a:time":
+		text, buttons := w.buildAutoUpdateTimePicker()
+		w.editMessage(w.lastMenuMsgID, text, buttons)
+
+	case strings.HasPrefix(data, "a:time:"):
+		t := strings.TrimPrefix(data, "a:time:")
+		if isValidTime(t) && w.AutoUpdateWatcher != nil {
+			w.AutoUpdateWatcher.SetTime(t)
+			w.persistAutoUpdateConfig()
+		}
+		text, buttons := w.buildAutoUpdateView()
+		w.editMessage(w.lastMenuMsgID, text, buttons)
+	}
+}
+
 // ── Menu system ──────────────────────────────────────────────────────────────
 
 // buildMainMenu returns the main control panel text and button grid.
@@ -1753,8 +2019,21 @@ func (w *TelegramBotWatcher) buildStorageView() (string, [][]InlineButton) {
 func (w *TelegramBotWatcher) buildUpdatesView() (string, [][]InlineButton) {
 	text := w.cmdUpdates()
 
+	// Append auto-update status summary
+	if w.AutoUpdateWatcher != nil {
+		if w.Cfg.AutoUpdate.Enabled {
+			day := w.Cfg.AutoUpdate.DayOfWeek
+			if day == "" {
+				day = "daily"
+			}
+			text += fmt.Sprintf("\n\n⏰ Auto-update: <b>%s at %s</b>", capitalise(day), w.Cfg.AutoUpdate.Time)
+		} else {
+			text += "\n\n⏰ Auto-update: <b>disabled</b>"
+		}
+	}
+
 	buttons := [][]InlineButton{
-		{{Text: "📦 Run Update", Data: "u:run"}},
+		{{Text: "📦 Run Update", Data: "u:run"}, {Text: "⏰ Auto-Update", Data: "a:home"}},
 		{{Text: "◀️ Back", Data: "m:home"}},
 	}
 
