@@ -28,12 +28,13 @@ import (
 // TelegramBotWatcher polls for incoming Telegram messages and handles commands
 type TelegramBotWatcher struct {
 	Base
-	token    string
-	chatID   string
-	client   *http.Client
-	offset   int
-	labeller *analysers.PortLabeller
-	store    *store.Store
+	token         string
+	chatID        string
+	client        *http.Client
+	offset        int
+	labeller      *analysers.PortLabeller
+	store         *store.Store
+	BackupWatcher *BackupWatcher // nil when backup is disabled
 }
 
 func NewTelegramBotWatcher(cfg *config.Config, bus *eventbus.Bus, db *store.Store) *TelegramBotWatcher {
@@ -213,6 +214,8 @@ func (w *TelegramBotWatcher) handleCommand(text string) {
 		response = w.cmdPilog()
 	case "/reboot":
 		response = w.cmdReboot(parts)
+	case "/backup":
+		response = w.cmdBackupRouter(parts)
 	default:
 		response = fmt.Sprintf("Unknown command: %s\nSend /help for available commands.", cmd)
 	}
@@ -306,6 +309,14 @@ func (w *TelegramBotWatcher) handleCallback(callbackID, data string) {
 		response = w.cmdStorageApt([]string{"CONFIRM"})
 	case data == "storage:all":
 		response = w.cmdStorageAll([]string{"CONFIRM"})
+	case data == "backup:confirm":
+		go func() {
+			result := w.cmdBackupNow([]string{"CONFIRM"})
+			if result != "" {
+				w.sendReply(result)
+			}
+		}()
+		response = "⏳ Backup started — you'll be notified when it completes."
 	default:
 		response = fmt.Sprintf("Unknown action: %s", data)
 	}
@@ -361,6 +372,10 @@ func (w *TelegramBotWatcher) cmdHelp() string {
 
 <b>Reports</b>
 /report — On-demand weekly trend report
+
+<b>Backup</b>
+/backup — Backup status
+/backup now — Run backup now (with confirmation)
 
 <b>Danger zone</b>
 /reboot CONFIRM — Reboot the Pi`
@@ -1444,4 +1459,40 @@ func truncate(s string, max int) string {
 		return s
 	}
 	return s[:max] + "..."
+}
+
+// ── Backup commands ──
+
+func (w *TelegramBotWatcher) cmdBackupRouter(parts []string) string {
+	if w.BackupWatcher == nil {
+		return "❌ Backup is not enabled.\nSet <code>backup.enabled: true</code> in config."
+	}
+
+	if len(parts) < 2 {
+		return w.cmdBackupStatus()
+	}
+
+	switch strings.ToLower(parts[1]) {
+	case "status":
+		return w.cmdBackupStatus()
+	case "now":
+		return w.cmdBackupNow(parts[2:])
+	default:
+		return "Usage: /backup [status|now]"
+	}
+}
+
+func (w *TelegramBotWatcher) cmdBackupStatus() string {
+	return w.BackupWatcher.GetStatus()
+}
+
+func (w *TelegramBotWatcher) cmdBackupNow(args []string) string {
+	if len(args) > 0 && strings.ToUpper(args[0]) == "CONFIRM" {
+		return w.BackupWatcher.RunBackup()
+	}
+
+	w.sendReplyWithKeyboard("💾 <b>Run backup now?</b>\nThis will rsync to "+
+		w.BackupWatcher.Cfg.Backup.Destination,
+		[][]InlineButton{{{Text: "💾 Start Backup", Data: "backup:confirm"}}})
+	return ""
 }

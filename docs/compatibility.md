@@ -80,3 +80,11 @@ PiGuard requires elevated privileges for several watchers:
 | Write `/var/lib/piguard/` | SQLite database | Created at startup; requires write permission |
 
 The standard install (`scripts/install.sh`) runs PiGuard as root via systemd, which satisfies all requirements.
+
+---
+
+## See also
+
+- [Documentation Index](README.md)
+- [Getting Started](getting-started.md) — installation and first-run guide
+- [Architecture](architecture.md) — system design and data flow

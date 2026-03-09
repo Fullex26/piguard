@@ -23,6 +23,7 @@ type Config struct {
 	Network         NetworkConfig        `yaml:"network"`
 	Connectivity    ConnectivityConfig   `yaml:"connectivity"`
 	AutoUpdate      AutoUpdateConfig     `yaml:"auto_update"`
+	Backup          BackupConfig         `yaml:"backup"`
 	AuthLog         AuthLogConfig        `yaml:"auth_log"`
 	Logging         LoggingConfig        `yaml:"logging"`
 }
@@ -154,6 +155,16 @@ type ConnectivityConfig struct {
 	Hosts        []string `yaml:"hosts"`          // TCP dial targets, e.g. "8.8.8.8:53"
 }
 
+type BackupConfig struct {
+	Enabled     bool     `yaml:"enabled"`
+	Sources     []string `yaml:"sources"`       // Directories to back up
+	Destination string   `yaml:"destination"`    // Local path or user@host:/path
+	DayOfWeek   string   `yaml:"day_of_week"`   // "daily" or weekday name
+	Time        string   `yaml:"time"`           // "02:00" 24h format
+	Retention   int      `yaml:"retention"`      // Number of date-stamped backups to keep
+	RsyncFlags  string   `yaml:"rsync_flags"`   // Optional override for rsync flags
+}
+
 type LoggingConfig struct {
 	Level     string `yaml:"level"`       // "debug"/"info"/"warn"/"error", default "info"
 	File      string `yaml:"file"`        // default "" (disabled)
@@ -265,6 +276,14 @@ func DefaultConfig() *Config {
 			Time:               "03:00",
 			AutoReboot:         false,
 			RebootDelayMinutes: 5,
+		},
+		Backup: BackupConfig{
+			Enabled:     false,
+			Sources:     []string{"/home", "/etc", "/var/lib/piguard"},
+			Destination: "/mnt/backup/piguard",
+			DayOfWeek:   "daily",
+			Time:        "02:00",
+			Retention:   7,
 		},
 		Logging: LoggingConfig{
 			Level:     "info",

@@ -74,9 +74,18 @@ func New(cfg *config.Config) (*Daemon, error) {
 		d.watchers = append(d.watchers, watchers.NewInotifyWatcher(cfg, bus))
 	}
 
+	// Backup watcher (must be created before Telegram bot so it can be wired in)
+	var backupW *watchers.BackupWatcher
+	if cfg.Backup.Enabled {
+		backupW = watchers.NewBackupWatcher(cfg, bus, db)
+		d.watchers = append(d.watchers, backupW)
+	}
+
 	// Telegram interactive bot (two-way commands)
 	if cfg.Notifications.Telegram.Enabled {
-		d.watchers = append(d.watchers, watchers.NewTelegramBotWatcher(cfg, bus, db))
+		tbot := watchers.NewTelegramBotWatcher(cfg, bus, db)
+		tbot.BackupWatcher = backupW // nil-safe; commands check for nil
+		d.watchers = append(d.watchers, tbot)
 	}
 	if cfg.SecurityTools.Enabled {
 		d.watchers = append(d.watchers, watchers.NewSecToolsWatcher(cfg, bus))

@@ -65,6 +65,9 @@ const (
 	EventContainerUpdated     EventType = "docker.container_updated" // Container replaced with new image (Watchtower)
 	EventSystemUpdated        EventType = "system.updated"           // Successful apt upgrade
 	EventSystemUpdateFailed   EventType = "system.update_failed"     // apt upgrade error
+	EventBackupStarted        EventType = "backup.started"           // Backup job began
+	EventBackupCompleted      EventType = "backup.completed"         // Backup finished successfully
+	EventBackupFailed         EventType = "backup.failed"            // Backup encountered an error
 )
 
 // PortInfo describes a listening port with full context

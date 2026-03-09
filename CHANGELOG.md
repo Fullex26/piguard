@@ -7,6 +7,24 @@ PiGuard uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.10.0] — 2026-03-09
+
+### Added
+- **Backup system** — new `BackupWatcher` runs scheduled rsync backups to local or remote destinations
+  - Configurable sources, destination (local path or `user@host:/path`), schedule (daily or weekly), and retention count
+  - Date-stamped backup directories with `latest` symlink for incremental rsync (`--link-dest`)
+  - Pre-flight checks: verifies rsync is installed, destination is mounted/reachable (SSH connectivity test for remote)
+  - Atomic guard prevents concurrent backup runs
+  - Retention cleanup: automatically removes oldest backups beyond configured limit
+  - Persists backup state (status, time, size, duration, error) to SQLite for cross-restart visibility
+- **Telegram `/backup` commands** — `/backup` or `/backup status` shows last backup result and config; `/backup now` triggers an on-demand backup with inline keyboard confirmation
+- 3 new event types: `backup.started`, `backup.completed`, `backup.failed`
+- 17 new tests covering schedule matching, successful/failed backups, pre-flight failures, concurrent run guard, retention cleanup, remote destinations, custom rsync flags, and status formatting
+
+[0.10.0]: https://github.com/Fullex26/piguard/releases/tag/v0.10.0
+
+---
+
 ## [0.9.1] — 2026-03-08
 
 ### Fixed
