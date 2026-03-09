@@ -28,13 +28,14 @@ import (
 // TelegramBotWatcher polls for incoming Telegram messages and handles commands
 type TelegramBotWatcher struct {
 	Base
-	token         string
-	chatID        string
-	client        *http.Client
-	offset        int
-	labeller      *analysers.PortLabeller
-	store         *store.Store
-	BackupWatcher *BackupWatcher // nil when backup is disabled
+	token          string
+	chatID         string
+	client         *http.Client
+	offset         int
+	labeller       *analysers.PortLabeller
+	store          *store.Store
+	BackupWatcher  *BackupWatcher // nil when backup is disabled
+	lastMenuMsgID  int            // message_id of current navigation message (for edit-in-place)
 }
 
 func NewTelegramBotWatcher(cfg *config.Config, bus *eventbus.Bus, db *store.Store) *TelegramBotWatcher {
@@ -117,7 +118,8 @@ func (w *TelegramBotWatcher) poll(ctx context.Context) {
 					Username string `json:"username"`
 				} `json:"from"`
 				Message struct {
-					Chat struct {
+					MessageID int `json:"message_id"`
+					Chat      struct {
 						ID int64 `json:"id"`
 					} `json:"chat"`
 				} `json:"message"`
@@ -140,6 +142,7 @@ func (w *TelegramBotWatcher) poll(ctx context.Context) {
 			if update.CallbackQuery.Message.Chat.ID != chatIDInt {
 				continue
 			}
+			w.lastMenuMsgID = update.CallbackQuery.Message.MessageID
 			w.handleCallback(update.CallbackQuery.ID, update.CallbackQuery.Data)
 			continue
 		}
@@ -175,7 +178,9 @@ func (w *TelegramBotWatcher) handleCommand(text string) {
 
 	switch cmd {
 	case "/start", "/help":
-		response = w.cmdHelp()
+		text, buttons := w.buildMainMenu()
+		w.lastMenuMsgID = w.sendReplyWithKeyboardReturnID(text, buttons)
+		return
 	case "/status":
 		response = w.cmdStatus()
 	case "/ports":
@@ -271,6 +276,127 @@ func (w *TelegramBotWatcher) sendReplyWithKeyboard(text string, buttons [][]Inli
 	resp.Body.Close()
 }
 
+// sendReplyReturnID sends a message and returns the message_id (0 on failure).
+func (w *TelegramBotWatcher) sendReplyReturnID(text string) int {
+	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", w.token)
+
+	data := url.Values{}
+	data.Set("chat_id", w.chatID)
+	data.Set("parse_mode", "HTML")
+	data.Set("text", text)
+
+	resp, err := http.PostForm(apiURL, data)
+	if err != nil {
+		slog.Error("telegram reply failed", "error", err)
+		return 0
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0
+	}
+
+	var result struct {
+		OK     bool `json:"ok"`
+		Result struct {
+			MessageID int `json:"message_id"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil || !result.OK {
+		return 0
+	}
+	return result.Result.MessageID
+}
+
+// sendReplyWithKeyboardReturnID sends a message with inline keyboard and returns the message_id.
+func (w *TelegramBotWatcher) sendReplyWithKeyboardReturnID(text string, buttons [][]InlineButton) int {
+	keyboard := struct {
+		InlineKeyboard [][]InlineButton `json:"inline_keyboard"`
+	}{InlineKeyboard: buttons}
+
+	markup, _ := json.Marshal(keyboard)
+
+	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", w.token)
+
+	data := url.Values{}
+	data.Set("chat_id", w.chatID)
+	data.Set("parse_mode", "HTML")
+	data.Set("text", text)
+	data.Set("reply_markup", string(markup))
+
+	resp, err := http.PostForm(apiURL, data)
+	if err != nil {
+		slog.Error("telegram reply with keyboard failed", "error", err)
+		return 0
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0
+	}
+
+	var result struct {
+		OK     bool `json:"ok"`
+		Result struct {
+			MessageID int `json:"message_id"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil || !result.OK {
+		return 0
+	}
+	return result.Result.MessageID
+}
+
+// editMessage updates an existing message in-place. Falls back to sending a new
+// message if messageID is 0 or the edit fails with "message not found".
+// Silently ignores "message is not modified" errors.
+func (w *TelegramBotWatcher) editMessage(messageID int, text string, buttons [][]InlineButton) {
+	if messageID == 0 {
+		w.lastMenuMsgID = w.sendReplyWithKeyboardReturnID(text, buttons)
+		return
+	}
+
+	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/editMessageText", w.token)
+
+	data := url.Values{}
+	data.Set("chat_id", w.chatID)
+	data.Set("message_id", strconv.Itoa(messageID))
+	data.Set("parse_mode", "HTML")
+	data.Set("text", text)
+
+	if len(buttons) > 0 {
+		keyboard := struct {
+			InlineKeyboard [][]InlineButton `json:"inline_keyboard"`
+		}{InlineKeyboard: buttons}
+		markup, _ := json.Marshal(keyboard)
+		data.Set("reply_markup", string(markup))
+	}
+
+	resp, err := http.PostForm(apiURL, data)
+	if err != nil {
+		slog.Error("telegram editMessage failed", "error", err)
+		w.lastMenuMsgID = w.sendReplyWithKeyboardReturnID(text, buttons)
+		return
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		OK          bool   `json:"ok"`
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal(body, &result); err == nil && !result.OK {
+		// "message is not modified" is benign — user tapped the same button twice
+		if strings.Contains(result.Description, "message is not modified") {
+			return
+		}
+		// "message to edit not found" — fall back to sending a new message
+		w.lastMenuMsgID = w.sendReplyWithKeyboardReturnID(text, buttons)
+	}
+}
+
 // answerCallbackQuery acknowledges a callback query (removes the loading spinner).
 func (w *TelegramBotWatcher) answerCallbackQuery(callbackID string) {
 	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/answerCallbackQuery", w.token)
@@ -289,6 +415,41 @@ func (w *TelegramBotWatcher) handleCallback(callbackID, data string) {
 
 	slog.Info("telegram callback received", "data", data)
 
+	// New prefix-based menu navigation
+	switch {
+	case strings.HasPrefix(data, "m:"):
+		w.handleMenuNav(data)
+		return
+	case strings.HasPrefix(data, "s:"):
+		w.handleSystemDetail(data)
+		return
+	case strings.HasPrefix(data, "x:"):
+		w.handleSecurityDetail(data)
+		return
+	case strings.HasPrefix(data, "d:"):
+		w.handleDockerAction(data)
+		return
+	case strings.HasPrefix(data, "t:"):
+		w.handleStorageAction(data)
+		return
+	case strings.HasPrefix(data, "u:"):
+		w.handleUpdateAction(data)
+		return
+	case strings.HasPrefix(data, "b:"):
+		w.handleBackupAction(data)
+		return
+	case strings.HasPrefix(data, "r:"):
+		w.handleReportAction(data)
+		return
+	case strings.HasPrefix(data, "g:"):
+		w.handleDiagAction(data)
+		return
+	case strings.HasPrefix(data, "z:"):
+		w.handleDangerAction(data)
+		return
+	}
+
+	// Legacy callbacks (backward compat with old inline keyboards in chat history)
 	var response string
 
 	switch {
@@ -1495,4 +1656,449 @@ func (w *TelegramBotWatcher) cmdBackupNow(args []string) string {
 		w.BackupWatcher.Cfg.Backup.Destination,
 		[][]InlineButton{{{Text: "💾 Start Backup", Data: "backup:confirm"}}})
 	return ""
+}
+
+// ── Menu system ──────────────────────────────────────────────────────────────
+
+// buildMainMenu returns the main control panel text and button grid.
+func (w *TelegramBotWatcher) buildMainMenu() (string, [][]InlineButton) {
+	text := "🛡️ <b>PiGuard Control Panel</b>\n\nWelcome to your Pi's command center.\nTap a category below to get started."
+
+	buttons := [][]InlineButton{
+		{{Text: "🖥️ System", Data: "m:sys"}, {Text: "🔒 Security", Data: "m:sec"}},
+		{{Text: "🐳 Docker", Data: "m:dock"}, {Text: "💾 Storage", Data: "m:stor"}},
+		{{Text: "📦 Updates", Data: "m:upd"}, {Text: "🗄️ Backup", Data: "m:bak"}},
+		{{Text: "📊 Reports", Data: "m:rep"}, {Text: "⚙️ Diagnostics", Data: "m:diag"}},
+		{{Text: "⚠️ Danger Zone", Data: "m:danger"}},
+	}
+
+	return text, buttons
+}
+
+// buildSystemView returns the system overview category.
+func (w *TelegramBotWatcher) buildSystemView() (string, [][]InlineButton) {
+	hostname, _ := os.Hostname()
+
+	text := fmt.Sprintf("🖥️ <b>System — %s</b>\n\n"+
+		"  💾 Disk: %s\n"+
+		"  🧠 RAM: %s\n"+
+		"  🌡️ Temp: %s\n"+
+		"  ⏱️ Uptime: %s",
+		hostname, w.getDiskStr(), w.getMemStr(), w.getTempStr(), w.getUptimeStr())
+
+	buttons := [][]InlineButton{
+		{{Text: "💾 Disk", Data: "s:disk"}, {Text: "🧠 Memory", Data: "s:mem"}},
+		{{Text: "🌡️ Temp", Data: "s:temp"}, {Text: "⏱️ Uptime", Data: "s:up"}},
+		{{Text: "🌐 IP", Data: "s:ip"}, {Text: "⚙️ Services", Data: "s:svc"}},
+		{{Text: "◀️ Back", Data: "m:home"}},
+	}
+
+	return text, buttons
+}
+
+// buildSecurityView returns the security overview category.
+func (w *TelegramBotWatcher) buildSecurityView() (string, [][]InlineButton) {
+	fw := w.getFirewallStatus()
+	ports := w.getPortCount()
+
+	var lastAlert string
+	if w.store != nil {
+		lastAlert, _ = w.store.GetLastAlertTime()
+	} else {
+		lastAlert = "unknown"
+	}
+
+	text := fmt.Sprintf("🔒 <b>Security</b>\n\n"+
+		"  🔥 Firewall: %s\n"+
+		"  🔌 Ports: %s\n"+
+		"  ⚠️ Last alert: %s",
+		fw, ports, lastAlert)
+
+	buttons := [][]InlineButton{
+		{{Text: "🔌 Ports", Data: "x:ports"}, {Text: "🔥 Firewall", Data: "x:fw"}},
+		{{Text: "📋 Events", Data: "x:events"}, {Text: "🔍 Scan", Data: "x:scan"}},
+		{{Text: "◀️ Back", Data: "m:home"}},
+	}
+
+	return text, buttons
+}
+
+// buildDockerView returns the Docker overview category.
+func (w *TelegramBotWatcher) buildDockerView() (string, [][]InlineButton) {
+	text := w.cmdDocker()
+	text += "\n\n<i>Use text commands for container actions:\n/docker stop|restart|fix|logs|remove &lt;name&gt;</i>"
+
+	buttons := [][]InlineButton{
+		{{Text: "🧹 Prune", Data: "d:prune"}},
+		{{Text: "◀️ Back", Data: "m:home"}},
+	}
+
+	return text, buttons
+}
+
+// buildStorageView returns the storage overview category.
+func (w *TelegramBotWatcher) buildStorageView() (string, [][]InlineButton) {
+	text := w.cmdStorageReport()
+
+	buttons := [][]InlineButton{
+		{{Text: "🖼️ Images", Data: "t:img"}, {Text: "📦 Volumes", Data: "t:vol"}},
+		{{Text: "🧹 apt", Data: "t:apt"}, {Text: "🧹 Full Cleanup", Data: "t:all"}},
+		{{Text: "◀️ Back", Data: "m:home"}},
+	}
+
+	return text, buttons
+}
+
+// buildUpdatesView returns the updates overview category.
+func (w *TelegramBotWatcher) buildUpdatesView() (string, [][]InlineButton) {
+	text := w.cmdUpdates()
+
+	buttons := [][]InlineButton{
+		{{Text: "📦 Run Update", Data: "u:run"}},
+		{{Text: "◀️ Back", Data: "m:home"}},
+	}
+
+	return text, buttons
+}
+
+// buildBackupView returns the backup overview category.
+func (w *TelegramBotWatcher) buildBackupView() (string, [][]InlineButton) {
+	var text string
+	if w.BackupWatcher == nil {
+		text = "🗄️ <b>Backup</b>\n\n❌ Backup is not enabled.\nSet <code>backup.enabled: true</code> in config."
+	} else {
+		text = w.BackupWatcher.GetStatus()
+	}
+
+	var actionButtons []InlineButton
+	if w.BackupWatcher != nil {
+		actionButtons = append(actionButtons, InlineButton{Text: "💾 Backup Now", Data: "b:now"})
+	}
+
+	buttons := [][]InlineButton{}
+	if len(actionButtons) > 0 {
+		buttons = append(buttons, actionButtons)
+	}
+	buttons = append(buttons, []InlineButton{{Text: "◀️ Back", Data: "m:home"}})
+
+	return text, buttons
+}
+
+// buildReportsView returns the reports overview category.
+func (w *TelegramBotWatcher) buildReportsView() (string, [][]InlineButton) {
+	text := w.cmdReport()
+
+	buttons := [][]InlineButton{
+		{{Text: "📊 Refresh", Data: "r:refresh"}},
+		{{Text: "◀️ Back", Data: "m:home"}},
+	}
+
+	return text, buttons
+}
+
+// buildDiagnosticsView returns the diagnostics overview category.
+func (w *TelegramBotWatcher) buildDiagnosticsView() (string, [][]InlineButton) {
+	text := "⚙️ <b>Diagnostics</b>\n\nCheck PiGuard health or view recent logs."
+
+	buttons := [][]InlineButton{
+		{{Text: "🩺 Doctor", Data: "g:doctor"}, {Text: "📋 PiLog", Data: "g:pilog"}},
+		{{Text: "◀️ Back", Data: "m:home"}},
+	}
+
+	return text, buttons
+}
+
+// buildDangerView returns the danger zone category.
+func (w *TelegramBotWatcher) buildDangerView() (string, [][]InlineButton) {
+	text := "⚠️ <b>Danger Zone</b>\n\n⚠️ Actions here affect system availability.\nProceed with caution."
+
+	buttons := [][]InlineButton{
+		{{Text: "🔄 Reboot", Data: "z:reboot"}},
+		{{Text: "◀️ Back", Data: "m:home"}},
+	}
+
+	return text, buttons
+}
+
+// buildDetailView wraps content with a single back button pointing to the parent category.
+func buildDetailView(content, backCallback string) (string, [][]InlineButton) {
+	buttons := [][]InlineButton{
+		{{Text: "◀️ Back", Data: backCallback}},
+	}
+	return content, buttons
+}
+
+// buildConfirmView returns a confirmation dialog with Confirm and Cancel buttons.
+func buildConfirmView(title, description, confirmData, cancelData string) (string, [][]InlineButton) {
+	text := fmt.Sprintf("⚠️ <b>%s</b>\n\n%s", title, description)
+	buttons := [][]InlineButton{
+		{
+			{Text: "✅ Confirm", Data: confirmData},
+			{Text: "❌ Cancel", Data: cancelData},
+		},
+	}
+	return text, buttons
+}
+
+// ── Menu navigation handlers ─────────────────────────────────────────────────
+
+func (w *TelegramBotWatcher) handleMenuNav(data string) {
+	var text string
+	var buttons [][]InlineButton
+
+	switch data {
+	case "m:home":
+		text, buttons = w.buildMainMenu()
+	case "m:sys":
+		text, buttons = w.buildSystemView()
+	case "m:sec":
+		text, buttons = w.buildSecurityView()
+	case "m:dock":
+		text, buttons = w.buildDockerView()
+	case "m:stor":
+		text, buttons = w.buildStorageView()
+	case "m:upd":
+		text, buttons = w.buildUpdatesView()
+	case "m:bak":
+		text, buttons = w.buildBackupView()
+	case "m:rep":
+		text, buttons = w.buildReportsView()
+	case "m:diag":
+		text, buttons = w.buildDiagnosticsView()
+	case "m:danger":
+		text, buttons = w.buildDangerView()
+	default:
+		text, buttons = w.buildMainMenu()
+	}
+
+	w.editMessage(w.lastMenuMsgID, text, buttons)
+}
+
+func (w *TelegramBotWatcher) handleSystemDetail(data string) {
+	var content string
+
+	switch data {
+	case "s:disk":
+		content = w.cmdDisk()
+	case "s:mem":
+		content = w.cmdMemory()
+	case "s:temp":
+		content = w.cmdTemp()
+	case "s:up":
+		content = w.cmdUptime()
+	case "s:ip":
+		content = w.cmdIP()
+	case "s:svc":
+		content = w.cmdServices()
+	default:
+		content = "Unknown system detail"
+	}
+
+	text, buttons := buildDetailView(content, "m:sys")
+	w.editMessage(w.lastMenuMsgID, text, buttons)
+}
+
+func (w *TelegramBotWatcher) handleSecurityDetail(data string) {
+	switch data {
+	case "x:ports":
+		content := w.cmdPorts()
+		text, buttons := buildDetailView(content, "m:sec")
+		w.editMessage(w.lastMenuMsgID, text, buttons)
+	case "x:fw":
+		content := w.cmdFirewall()
+		text, buttons := buildDetailView(content, "m:sec")
+		w.editMessage(w.lastMenuMsgID, text, buttons)
+	case "x:events":
+		content := w.cmdEvents()
+		text, buttons := buildDetailView(content, "m:sec")
+		w.editMessage(w.lastMenuMsgID, text, buttons)
+	case "x:scan":
+		// Long-running operation: show progress, then results
+		w.editMessage(w.lastMenuMsgID, "🔍 Running security scan...", nil)
+		go func() {
+			result := w.cmdScan()
+			w.sendReply(result)
+			// Restore security view
+			text, buttons := w.buildSecurityView()
+			w.editMessage(w.lastMenuMsgID, text, buttons)
+		}()
+	}
+}
+
+func (w *TelegramBotWatcher) handleDockerAction(data string) {
+	switch data {
+	case "d:prune":
+		text, buttons := buildConfirmView(
+			"Docker Prune",
+			"Remove all stopped containers, unused networks, dangling images, and build cache.",
+			"d:prune!", "m:dock")
+		w.editMessage(w.lastMenuMsgID, text, buttons)
+	case "d:prune!":
+		w.editMessage(w.lastMenuMsgID, "🧹 Running docker system prune...", nil)
+		go func() {
+			result := w.cmdDockerPrune([]string{"CONFIRM"})
+			if result != "" {
+				w.sendReply(result)
+			}
+			text, buttons := w.buildDockerView()
+			w.editMessage(w.lastMenuMsgID, text, buttons)
+		}()
+	}
+}
+
+func (w *TelegramBotWatcher) handleStorageAction(data string) {
+	switch data {
+	case "t:img":
+		text, buttons := buildConfirmView(
+			"Prune Docker Images",
+			"Remove all images not referenced by a container.",
+			"t:img!", "m:stor")
+		w.editMessage(w.lastMenuMsgID, text, buttons)
+	case "t:img!":
+		w.editMessage(w.lastMenuMsgID, "🧹 Pruning Docker images...", nil)
+		go func() {
+			result := w.cmdStorageImages([]string{"CONFIRM"})
+			if result != "" {
+				w.sendReply(result)
+			}
+			text, buttons := w.buildStorageView()
+			w.editMessage(w.lastMenuMsgID, text, buttons)
+		}()
+	case "t:vol":
+		text, buttons := buildConfirmView(
+			"Prune Docker Volumes",
+			"Remove volumes not attached to any container.",
+			"t:vol!", "m:stor")
+		w.editMessage(w.lastMenuMsgID, text, buttons)
+	case "t:vol!":
+		w.editMessage(w.lastMenuMsgID, "🧹 Pruning Docker volumes...", nil)
+		go func() {
+			result := w.cmdStorageVolumes([]string{"CONFIRM"})
+			if result != "" {
+				w.sendReply(result)
+			}
+			text, buttons := w.buildStorageView()
+			w.editMessage(w.lastMenuMsgID, text, buttons)
+		}()
+	case "t:apt":
+		text, buttons := buildConfirmView(
+			"Clean apt Cache",
+			"Run <code>apt-get clean &amp;&amp; apt-get autoremove -y</code>.",
+			"t:apt!", "m:stor")
+		w.editMessage(w.lastMenuMsgID, text, buttons)
+	case "t:apt!":
+		w.editMessage(w.lastMenuMsgID, "🧹 Cleaning apt cache...", nil)
+		go func() {
+			result := w.cmdStorageApt([]string{"CONFIRM"})
+			if result != "" {
+				w.sendReply(result)
+			}
+			text, buttons := w.buildStorageView()
+			w.editMessage(w.lastMenuMsgID, text, buttons)
+		}()
+	case "t:all":
+		text, buttons := buildConfirmView(
+			"Full Storage Cleanup",
+			"Prune Docker images, volumes, and apt cache.",
+			"t:all!", "m:stor")
+		w.editMessage(w.lastMenuMsgID, text, buttons)
+	case "t:all!":
+		w.editMessage(w.lastMenuMsgID, "🧹 Running full storage cleanup...", nil)
+		go func() {
+			result := w.cmdStorageAll([]string{"CONFIRM"})
+			if result != "" {
+				w.sendReply(result)
+			}
+			text, buttons := w.buildStorageView()
+			w.editMessage(w.lastMenuMsgID, text, buttons)
+		}()
+	}
+}
+
+func (w *TelegramBotWatcher) handleUpdateAction(data string) {
+	switch data {
+	case "u:run":
+		text, buttons := buildConfirmView(
+			"System Update",
+			"Run <code>apt-get update &amp;&amp; apt-get upgrade -y</code>.",
+			"u:run!", "m:upd")
+		w.editMessage(w.lastMenuMsgID, text, buttons)
+	case "u:run!":
+		w.editMessage(w.lastMenuMsgID, "📦 Running system update...", nil)
+		go func() {
+			result := w.cmdUpdate([]string{"/update", "CONFIRM"})
+			if result != "" {
+				w.sendReply(result)
+			}
+			text, buttons := w.buildUpdatesView()
+			w.editMessage(w.lastMenuMsgID, text, buttons)
+		}()
+	}
+}
+
+func (w *TelegramBotWatcher) handleBackupAction(data string) {
+	switch data {
+	case "b:now":
+		if w.BackupWatcher == nil {
+			w.editMessage(w.lastMenuMsgID, "❌ Backup is not enabled.", [][]InlineButton{
+				{{Text: "◀️ Back", Data: "m:home"}},
+			})
+			return
+		}
+		text, buttons := buildConfirmView(
+			"Run Backup Now",
+			"Rsync to "+w.BackupWatcher.Cfg.Backup.Destination,
+			"b:now!", "m:bak")
+		w.editMessage(w.lastMenuMsgID, text, buttons)
+	case "b:now!":
+		if w.BackupWatcher == nil {
+			return
+		}
+		w.editMessage(w.lastMenuMsgID, "⏳ Backup started...", nil)
+		go func() {
+			result := w.BackupWatcher.RunBackup()
+			if result != "" {
+				w.sendReply(result)
+			}
+			text, buttons := w.buildBackupView()
+			w.editMessage(w.lastMenuMsgID, text, buttons)
+		}()
+	}
+}
+
+func (w *TelegramBotWatcher) handleReportAction(data string) {
+	if data == "r:refresh" {
+		text, buttons := w.buildReportsView()
+		w.editMessage(w.lastMenuMsgID, text, buttons)
+	}
+}
+
+func (w *TelegramBotWatcher) handleDiagAction(data string) {
+	switch data {
+	case "g:doctor":
+		content := w.cmdDoctor()
+		text, buttons := buildDetailView(content, "m:diag")
+		w.editMessage(w.lastMenuMsgID, text, buttons)
+	case "g:pilog":
+		content := w.cmdPilog()
+		text, buttons := buildDetailView(content, "m:diag")
+		w.editMessage(w.lastMenuMsgID, text, buttons)
+	}
+}
+
+func (w *TelegramBotWatcher) handleDangerAction(data string) {
+	switch data {
+	case "z:reboot":
+		text, buttons := buildConfirmView(
+			"Reboot System",
+			"The Pi will reboot in 5 seconds. All connections will be dropped.",
+			"z:reboot!", "m:danger")
+		w.editMessage(w.lastMenuMsgID, text, buttons)
+	case "z:reboot!":
+		w.editMessage(w.lastMenuMsgID, "🔄 Rebooting in 5 seconds...", nil)
+		go func() {
+			time.Sleep(5 * time.Second)
+			_ = exec.Command("reboot").Run()
+		}()
+	}
 }
