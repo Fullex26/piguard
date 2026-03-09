@@ -368,23 +368,27 @@ func TestHandleCommand_IgnoresNonCommand(t *testing.T) {
 	w.handleCommand("just a regular message") // should silently return
 }
 
-func TestCmdHelp_ContainsAllSections(t *testing.T) {
+func TestBuildMainMenu_ContainsAllCategories_Legacy(t *testing.T) {
 	w := &TelegramBotWatcher{}
-	help := w.cmdHelp()
+	text, buttons := w.buildMainMenu()
 
-	sections := []string{"System", "Security", "Docker", "Storage", "Updates", "Diagnostics", "Reports"}
-	for _, s := range sections {
-		if !containsString(help, s) {
-			t.Errorf("help output missing section: %s", s)
+	if !containsString(text, "PiGuard") {
+		t.Error("main menu missing PiGuard header")
+	}
+
+	// Flatten button data values
+	dataSet := make(map[string]bool)
+	for _, row := range buttons {
+		for _, btn := range row {
+			dataSet[btn.Data] = true
 		}
 	}
-}
 
-func TestCmdHelp_ContainsPilog(t *testing.T) {
-	w := &TelegramBotWatcher{}
-	help := w.cmdHelp()
-	if !containsString(help, "/pilog") {
-		t.Error("help output missing /pilog command")
+	expected := []string{"m:sys", "m:sec", "m:dock", "m:stor", "m:upd", "m:bak", "m:rep", "m:diag", "m:danger"}
+	for _, d := range expected {
+		if !dataSet[d] {
+			t.Errorf("main menu missing button with data %q", d)
+		}
 	}
 }
 

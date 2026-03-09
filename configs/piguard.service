@@ -11,9 +11,9 @@ RestartSec=10
 EnvironmentFile=-/etc/piguard/env
 
 # Security hardening
-NoNewPrivileges=false
+NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/var/lib/piguard /var/log/piguard /tmp /var/cache/apt /var/lib/apt /var/lib/dpkg
+ReadWritePaths=/var/lib/piguard /var/log/piguard /etc/piguard /tmp /var/cache/apt /var/lib/apt /var/lib/dpkg
 
 [Install]
 WantedBy=multi-user.target

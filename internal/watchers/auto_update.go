@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Fullex26/piguard/internal/config"
@@ -19,6 +20,7 @@ import (
 // AutoUpdateWatcher runs scheduled apt upgrades and publishes results as events.
 type AutoUpdateWatcher struct {
 	Base
+	mu         sync.RWMutex
 	dayOfWeek  time.Weekday // -1 means daily
 	daily      bool
 	timeHHMM   string
@@ -76,7 +78,11 @@ func (w *AutoUpdateWatcher) Start(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			if w.Cfg.AutoUpdate.Enabled && w.isScheduleMatch(time.Now()) {
+			w.mu.RLock()
+			enabled := w.Cfg.AutoUpdate.Enabled
+			match := w.isScheduleMatchLocked(time.Now())
+			w.mu.RUnlock()
+			if enabled && match {
 				w.runUpgrade()
 			}
 		}
@@ -85,6 +91,8 @@ func (w *AutoUpdateWatcher) Start(ctx context.Context) error {
 
 // SetDay updates the schedule day at runtime. Accepts "daily", "sunday", "monday", etc.
 func (w *AutoUpdateWatcher) SetDay(day string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	d := strings.ToLower(day)
 	if d == "daily" || d == "" {
 		w.daily = true
@@ -97,22 +105,30 @@ func (w *AutoUpdateWatcher) SetDay(day string) {
 
 // SetTime updates the schedule time at runtime. Format: "HH:MM" (24h).
 func (w *AutoUpdateWatcher) SetTime(t string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	w.timeHHMM = t
 	w.Cfg.AutoUpdate.Time = t
 }
 
 // SetAutoReboot toggles automatic reboot after updates at runtime.
 func (w *AutoUpdateWatcher) SetAutoReboot(enabled bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	w.Cfg.AutoUpdate.AutoReboot = enabled
 }
 
 // SetEnabled toggles the auto-update watcher on/off at runtime.
 func (w *AutoUpdateWatcher) SetEnabled(enabled bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	w.Cfg.AutoUpdate.Enabled = enabled
 }
 
 // GetStatus returns a formatted string describing the current auto-update configuration.
 func (w *AutoUpdateWatcher) GetStatus() string {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 	if !w.Cfg.AutoUpdate.Enabled {
 		return "⏰ <b>Auto-Update</b>\n\n❌ Disabled"
 	}
@@ -134,7 +150,15 @@ func (w *AutoUpdateWatcher) GetStatus() string {
 		capitalise(day), w.timeHHMM, reboot)
 }
 
+// isScheduleMatch checks if now matches the configured schedule (thread-safe).
 func (w *AutoUpdateWatcher) isScheduleMatch(now time.Time) bool {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.isScheduleMatchLocked(now)
+}
+
+// isScheduleMatchLocked checks schedule match. Caller must hold mu.RLock().
+func (w *AutoUpdateWatcher) isScheduleMatchLocked(now time.Time) bool {
 	hhmm := fmt.Sprintf("%02d:%02d", now.Hour(), now.Minute())
 	if hhmm != w.timeHHMM {
 		return false
