@@ -7,6 +7,21 @@ PiGuard uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.10.1] — 2026-03-10
+
+### Added
+- **Button-driven Telegram menu** — `/start` and `/help` now open a full inline keyboard navigation system with 9 categories (System, Security, Docker, Storage, Updates, Backup, Reports, Diagnostics, Danger Zone); each category drills into detail views and actions; all destructive operations go through an edit-in-place confirmation screen
+- **Auto-update settings via Telegram** — the `⏰ Auto-Update` menu category lets you toggle auto-update on/off, pick the schedule day, set the time, and enable/disable auto-reboot — all without editing the config file; changes persist to `/etc/piguard/config.yaml`
+
+### Fixed
+- **Race conditions**: `lastMenuMsgID` now protected by `sync.Mutex` via accessor methods; all long-running goroutines capture message ID as a local before spawning; `AutoUpdateWatcher` schedule fields guarded by `sync.RWMutex` between the watcher goroutine and Telegram bot goroutine
+- **Atomic config write**: `persistAutoUpdateConfig` writes to a `.tmp` file then renames atomically — eliminates truncation risk on crash mid-write
+- **systemd hardening**: `NoNewPrivileges` corrected to `true` (was incorrectly `false`); `/etc/piguard` added to `ReadWritePaths` so the service can persist Telegram-driven config changes
+
+[0.10.1]: https://github.com/Fullex26/piguard/releases/tag/v0.10.1
+
+---
+
 ## [0.10.0] — 2026-03-09
 
 ### Added

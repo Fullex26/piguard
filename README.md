@@ -167,7 +167,7 @@ Full documentation is available in the [`docs/`](docs/README.md) directory:
 - [x] **v0.7** — Security hardening + UX polish: SSH/auth log watcher (brute force and failed sudo detection); quiet hours enforcement for non-critical alerts; Telegram inline keyboard buttons replacing CONFIRM text guards; weekly trend reports
 - [x] **v0.8** — Observability & testing: `piguard send` CLI for Telegram messaging, persistent file logging with configurable level and rotation, Telegram `/pilog` for remote log tailing, `--verbose` flag, comprehensive test suite expansion (~74 new tests with injectable function refactoring)
 - [x] **v0.9** — Auto-reboot after upgrade: configurable `auto_reboot` and `reboot_delay_minutes` in `auto_update` config; sends Warning notification then reboots after delay
-- [x] **v0.10** — Backup system: scheduled rsync to USB drive or remote, Telegram `/backup now` and `/backup status` commands
+- [x] **v0.10** — Backup system: scheduled rsync to USB drive or remote, Telegram `/backup now` and `/backup status` commands; button-driven inline keyboard menu; auto-update settings via Telegram; race condition fixes and systemd hardening
 - [ ] **v0.11** — Service management: Telegram `/service start|stop|restart|status <name>` for systemctl control
 - [ ] **v0.12** — Embedded web dashboard
 - [ ] **v0.13** — Smart baselines with learning mode
