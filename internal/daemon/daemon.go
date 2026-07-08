@@ -88,7 +88,7 @@ func New(cfg *config.Config) (*Daemon, error) {
 	// Telegram interactive bot (two-way commands)
 	if cfg.Notifications.Telegram.Enabled {
 		tbot := watchers.NewTelegramBotWatcher(cfg, bus, db)
-		tbot.BackupWatcher = backupW           // nil-safe; commands check for nil
+		tbot.BackupWatcher = backupW // nil-safe; commands check for nil
 		tbot.AutoUpdateWatcher = autoUpdateW
 		d.watchers = append(d.watchers, tbot)
 	}
@@ -216,6 +216,15 @@ func (d *Daemon) handleEvent(event models.Event) {
 	// Check dedup
 	if !d.dedup.ShouldAlert(event) {
 		slog.Debug("event deduplicated", "type", event.Type, "message", event.Message)
+		return
+	}
+
+	if event.Severity < minNotificationSeverity(d.cfg.Alerts.MinSeverity) {
+		slog.Debug("below minimum notification severity",
+			"type", event.Type,
+			"severity", event.Severity.String(),
+			"min_severity", d.cfg.Alerts.MinSeverity,
+		)
 		return
 	}
 
@@ -371,6 +380,17 @@ func getUptimeStr() string {
 	days := int(seconds) / 86400
 	hours := (int(seconds) % 86400) / 3600
 	return fmt.Sprintf("%dd %dh", days, hours)
+}
+
+func minNotificationSeverity(value string) models.Severity {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "info":
+		return models.SeverityInfo
+	case "critical":
+		return models.SeverityCritical
+	default:
+		return models.SeverityWarning
+	}
 }
 
 func (d *Daemon) runCleanup(ctx context.Context) {
