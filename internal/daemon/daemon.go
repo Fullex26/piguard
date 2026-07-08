@@ -173,6 +173,10 @@ func (d *Daemon) Run() error {
 		d.runCleanup(ctx)
 	}()
 
+	if d.cfg.Dashboard.Enabled {
+		startDashboard(ctx, d.cfg.Dashboard, d.store)
+	}
+
 	hostname, _ := os.Hostname()
 	slog.Info("piguard started",
 		"version", Version,

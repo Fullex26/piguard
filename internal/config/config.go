@@ -11,21 +11,22 @@ import (
 const DefaultConfigPath = "/etc/piguard/config.yaml"
 
 type Config struct {
-	Notifications NotificationConfig `yaml:"notifications"`
-	Ports         PortConfig         `yaml:"ports"`
-	Firewall      FirewallConfig     `yaml:"firewall"`
-	System        SystemConfig       `yaml:"system"`
-	Alerts          AlertConfig          `yaml:"alerts"`
-	Baseline        BaselineConfig       `yaml:"baseline"`
-	Docker          DockerConfig         `yaml:"docker"`
-	FileIntegrity   FileIntegrityConfig  `yaml:"file_integrity"`
-	SecurityTools   SecurityToolsConfig  `yaml:"security_tools"`
-	Network         NetworkConfig        `yaml:"network"`
-	Connectivity    ConnectivityConfig   `yaml:"connectivity"`
-	AutoUpdate      AutoUpdateConfig     `yaml:"auto_update"`
-	Backup          BackupConfig         `yaml:"backup"`
-	AuthLog         AuthLogConfig        `yaml:"auth_log"`
-	Logging         LoggingConfig        `yaml:"logging"`
+	Notifications NotificationConfig  `yaml:"notifications"`
+	Ports         PortConfig          `yaml:"ports"`
+	Firewall      FirewallConfig      `yaml:"firewall"`
+	System        SystemConfig        `yaml:"system"`
+	Alerts        AlertConfig         `yaml:"alerts"`
+	Baseline      BaselineConfig      `yaml:"baseline"`
+	Docker        DockerConfig        `yaml:"docker"`
+	FileIntegrity FileIntegrityConfig `yaml:"file_integrity"`
+	SecurityTools SecurityToolsConfig `yaml:"security_tools"`
+	Network       NetworkConfig       `yaml:"network"`
+	Connectivity  ConnectivityConfig  `yaml:"connectivity"`
+	AutoUpdate    AutoUpdateConfig    `yaml:"auto_update"`
+	Backup        BackupConfig        `yaml:"backup"`
+	AuthLog       AuthLogConfig       `yaml:"auth_log"`
+	Dashboard     DashboardConfig     `yaml:"dashboard"`
+	Logging       LoggingConfig       `yaml:"logging"`
 }
 
 type NotificationConfig struct {
@@ -43,10 +44,10 @@ type TelegramConfig struct {
 }
 
 type NtfyConfig struct {
-	Enabled  bool   `yaml:"enabled"`
-	Topic    string `yaml:"topic"`
-	Server   string `yaml:"server"`
-	Token    string `yaml:"token"`
+	Enabled bool   `yaml:"enabled"`
+	Topic   string `yaml:"topic"`
+	Server  string `yaml:"server"`
+	Token   string `yaml:"token"`
 }
 
 type DiscordConfig struct {
@@ -74,9 +75,9 @@ type KnownPort struct {
 }
 
 type FirewallConfig struct {
-	Enabled       bool           `yaml:"enabled"`
-	Chains        []ChainConfig  `yaml:"chains"`
-	CheckInterval string         `yaml:"check_interval"`
+	Enabled       bool          `yaml:"enabled"`
+	Chains        []ChainConfig `yaml:"chains"`
+	CheckInterval string        `yaml:"check_interval"`
 }
 
 type ChainConfig struct {
@@ -136,33 +137,33 @@ type SecurityToolsConfig struct {
 
 type NetworkConfig struct {
 	Enabled      bool     `yaml:"enabled"`
-	PollInterval string   `yaml:"poll_interval"` // default: "5m"
+	PollInterval string   `yaml:"poll_interval"`  // default: "5m"
 	AlertOnLeave bool     `yaml:"alert_on_leave"` // alert when known device leaves
 	IgnoreMACs   []string `yaml:"ignore_macs"`    // MACs to never alert on
 }
 
 type AutoUpdateConfig struct {
 	Enabled            bool   `yaml:"enabled"`
-	DayOfWeek          string `yaml:"day_of_week"`           // "sunday", "monday", ... or "daily"
-	Time               string `yaml:"time"`                  // "03:00" (24h format)
-	AutoReboot         bool   `yaml:"auto_reboot"`           // reboot automatically when reboot-required exists
-	RebootDelayMinutes int    `yaml:"reboot_delay_minutes"`  // minutes to wait before rebooting (default 5)
+	DayOfWeek          string `yaml:"day_of_week"`          // "sunday", "monday", ... or "daily"
+	Time               string `yaml:"time"`                 // "03:00" (24h format)
+	AutoReboot         bool   `yaml:"auto_reboot"`          // reboot automatically when reboot-required exists
+	RebootDelayMinutes int    `yaml:"reboot_delay_minutes"` // minutes to wait before rebooting (default 5)
 }
 
 type ConnectivityConfig struct {
 	Enabled      bool     `yaml:"enabled"`
 	PollInterval string   `yaml:"poll_interval"` // default: "30s"
-	Hosts        []string `yaml:"hosts"`          // TCP dial targets, e.g. "8.8.8.8:53"
+	Hosts        []string `yaml:"hosts"`         // TCP dial targets, e.g. "8.8.8.8:53"
 }
 
 type BackupConfig struct {
 	Enabled     bool     `yaml:"enabled"`
-	Sources     []string `yaml:"sources"`       // Directories to back up
-	Destination string   `yaml:"destination"`    // Local path or user@host:/path
-	DayOfWeek   string   `yaml:"day_of_week"`   // "daily" or weekday name
-	Time        string   `yaml:"time"`           // "02:00" 24h format
-	Retention   int      `yaml:"retention"`      // Number of date-stamped backups to keep
-	RsyncFlags  string   `yaml:"rsync_flags"`   // Optional override for rsync flags
+	Sources     []string `yaml:"sources"`     // Directories to back up
+	Destination string   `yaml:"destination"` // Local path or user@host:/path
+	DayOfWeek   string   `yaml:"day_of_week"` // "daily" or weekday name
+	Time        string   `yaml:"time"`        // "02:00" 24h format
+	Retention   int      `yaml:"retention"`   // Number of date-stamped backups to keep
+	RsyncFlags  string   `yaml:"rsync_flags"` // Optional override for rsync flags
 }
 
 type LoggingConfig struct {
@@ -178,6 +179,11 @@ type AuthLogConfig struct {
 	BruteForceThreshold int    `yaml:"brute_force_threshold"` // default: 5
 	BruteForceWindow    string `yaml:"brute_force_window"`    // default: "5m"
 	AlertOnLogin        bool   `yaml:"alert_on_login"`        // default: false
+}
+
+type DashboardConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Listen  string `yaml:"listen"` // default: "127.0.0.1:20213"
 }
 
 // Load reads and parses the config file, expanding env vars
@@ -296,6 +302,10 @@ func DefaultConfig() *Config {
 			BruteForceThreshold: 5,
 			BruteForceWindow:    "5m",
 			AlertOnLogin:        false,
+		},
+		Dashboard: DashboardConfig{
+			Enabled: false,
+			Listen:  "127.0.0.1:20213",
 		},
 	}
 }
