@@ -188,6 +188,15 @@ func (w *NetlinkWatcher) isIgnored(addr string) bool {
 	return false
 }
 
+func (w *NetlinkWatcher) knownPortFor(addr string) (config.KnownPort, bool) {
+	for _, known := range w.Cfg.Ports.Known {
+		if matchAddrPattern(addr, known.Addr) {
+			return known, true
+		}
+	}
+	return config.KnownPort{}, false
+}
+
 // matchAddrPattern checks if an address matches a pattern like "127.0.0.1:*"
 func matchAddrPattern(addr, pattern string) bool {
 	if pattern == addr {
@@ -203,6 +212,7 @@ func matchAddrPattern(addr, pattern string) bool {
 
 func (w *NetlinkWatcher) emitPortOpened(port models.PortInfo) {
 	severity := port.RiskLevel()
+	known, isKnown := w.knownPortFor(port.Address)
 
 	msg := fmt.Sprintf("New listening port: %s → %s", port.Address, port.ProcessName)
 	details := ""
@@ -220,6 +230,23 @@ func (w *NetlinkWatcher) emitPortOpened(port models.PortInfo) {
 	} else {
 		details = "Localhost only — not network accessible ✓"
 	}
+	if isKnown {
+		label := strings.TrimSpace(known.Label)
+		if label == "" {
+			label = known.Addr
+		}
+		risk := strings.TrimSpace(strings.ToLower(known.Risk))
+		details = strings.TrimSpace(details + " | Known port: " + label)
+		switch risk {
+		case "critical":
+			severity = models.SeverityCritical
+		case "warning", "warn", "medium", "high":
+			severity = models.SeverityWarning
+		default:
+			severity = models.SeverityInfo
+			suggested = ""
+		}
+	}
 
 	hostname, _ := os.Hostname()
 	w.Bus.Publish(models.Event{
@@ -232,7 +259,7 @@ func (w *NetlinkWatcher) emitPortOpened(port models.PortInfo) {
 		Details:   details,
 		Suggested: suggested,
 		Source:    "netlink",
-		Port:     &port,
+		Port:      &port,
 	})
 }
 
@@ -246,6 +273,6 @@ func (w *NetlinkWatcher) emitPortClosed(port models.PortInfo) {
 		Timestamp: time.Now(),
 		Message:   fmt.Sprintf("Port closed: %s → %s", port.Address, port.ProcessName),
 		Source:    "netlink",
-		Port:     &port,
+		Port:      &port,
 	})
 }
