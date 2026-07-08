@@ -79,6 +79,22 @@ func expectNoBackupEvent(t *testing.T, ch chan models.Event) {
 	}
 }
 
+func awaitBackupEventType(t *testing.T, ch chan models.Event, want models.EventType) models.Event {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case e := <-ch:
+			if e.Type == want {
+				return e
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for backup event type %s", want)
+			return models.Event{}
+		}
+	}
+}
+
 func TestBackupWatcher_Name(t *testing.T) {
 	w := &BackupWatcher{}
 	if w.Name() != "backup" {
@@ -212,11 +228,7 @@ func TestBackupWatcher_DestNotMounted(t *testing.T) {
 
 	result := w.RunBackup()
 
-	_ = awaitBackupEvent(t, ch) // started
-	e := awaitBackupEvent(t, ch)
-	if e.Type != models.EventBackupFailed {
-		t.Errorf("expected backup.failed, got %s", e.Type)
-	}
+	awaitBackupEventType(t, ch, models.EventBackupFailed)
 
 	if !strings.Contains(result, "not found or not mounted") {
 		t.Errorf("expected mount error, got: %s", result)
