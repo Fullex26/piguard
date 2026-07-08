@@ -147,6 +147,11 @@ auth_log:
   brute_force_window: "5m"   # Sliding window for counting attempts
   alert_on_login: false      # Set true to get Info alerts on successful SSH logins
 
+# ── Read-only dashboard/API ──
+dashboard:
+  enabled: false
+  listen: "127.0.0.1:20213"
+
 # ── Connectivity monitoring ──
 connectivity:
   enabled: true

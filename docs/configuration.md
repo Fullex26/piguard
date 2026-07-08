@@ -178,6 +178,11 @@ auth_log:
   brute_force_window: "5m"                     # Sliding window for counting attempts
   alert_on_login: false                        # Info alert on successful SSH logins
 
+# -- Read-only dashboard/API --
+dashboard:
+  enabled: false
+  listen: "127.0.0.1:20213"                    # HTTP listen address
+
 # -- Backup (reserved for v0.10) --
 # backup:
 #   enabled: false
@@ -210,6 +215,22 @@ logging:
 | `interactive` | bool | `true` | Enable two-way bot commands (starts the TelegramBotWatcher) |
 
 When enabled, `bot_token` and `chat_id` are both required or validation fails.
+
+### dashboard
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `false` | Enable the read-only HTTP dashboard and JSON API |
+| `listen` | string | `"127.0.0.1:20213"` | Address the dashboard listens on |
+
+Endpoints:
+
+| Path | Description |
+|---|---|
+| `/` | Compact HTML dashboard for recent PiGuard events |
+| `/api/summary` | JSON summary of the last 24 hours |
+| `/api/events?hours=24&limit=50` | JSON recent events from SQLite |
+| `/healthz` | Plain-text health check |
 
 ### notifications.ntfy
 

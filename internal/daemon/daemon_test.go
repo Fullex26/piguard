@@ -269,6 +269,69 @@ func TestHandleEvent_DedupSuppresses(t *testing.T) {
 	}
 }
 
+func TestHandleEvent_MinSeveritySuppressesNotification(t *testing.T) {
+	cfg := testCfg()
+	cfg.Alerts.MinSeverity = "warning"
+	d, mock := newTestDaemonWithStore(t, cfg)
+
+	info := models.Event{
+		ID:        "info-event",
+		Type:      models.EventContainerStart,
+		Severity:  models.SeverityInfo,
+		Hostname:  "test",
+		Timestamp: time.Now(),
+		Message:   "container started",
+	}
+
+	d.handleEvent(info)
+
+	if sent := mock.SentEvents(); len(sent) != 0 {
+		t.Fatalf("expected 0 sent events below min severity, got %d", len(sent))
+	}
+
+	events, err := d.store.GetRecentEvents(24)
+	if err != nil {
+		t.Fatalf("GetRecentEvents: %v", err)
+	}
+	if len(events) != 1 || events[0].ID != "info-event" {
+		t.Fatalf("expected suppressed event to remain stored, got %+v", events)
+	}
+}
+
+func TestHandleEvent_MinSeverityCriticalOnly(t *testing.T) {
+	cfg := testCfg()
+	cfg.Alerts.MinSeverity = "critical"
+	d, mock := newTestDaemonWithStore(t, cfg)
+
+	warning := models.Event{
+		ID:        "warning-event",
+		Type:      models.EventPortOpened,
+		Severity:  models.SeverityWarning,
+		Hostname:  "test",
+		Timestamp: time.Now(),
+		Message:   "port opened",
+	}
+	critical := models.Event{
+		ID:        "critical-event",
+		Type:      models.EventConnectivityLost,
+		Severity:  models.SeverityCritical,
+		Hostname:  "test",
+		Timestamp: time.Now(),
+		Message:   "connectivity lost",
+	}
+
+	d.handleEvent(warning)
+	d.handleEvent(critical)
+
+	sent := mock.SentEvents()
+	if len(sent) != 1 {
+		t.Fatalf("expected 1 sent event at critical min severity, got %d", len(sent))
+	}
+	if sent[0].ID != "critical-event" {
+		t.Errorf("sent event ID = %q, want critical-event", sent[0].ID)
+	}
+}
+
 func TestHandleEvent_QuietHoursSuppressWarning(t *testing.T) {
 	cfg := testCfg()
 	// Set quiet hours to cover all day
@@ -333,6 +396,28 @@ func TestHandleEvent_DifferentEventTypes(t *testing.T) {
 	sent := mock.SentEvents()
 	if len(sent) != 2 {
 		t.Errorf("expected 2 sent events (different types), got %d", len(sent))
+	}
+}
+
+func TestMinNotificationSeverity(t *testing.T) {
+	tests := []struct {
+		input string
+		want  models.Severity
+	}{
+		{"info", models.SeverityInfo},
+		{" warning ", models.SeverityWarning},
+		{"critical", models.SeverityCritical},
+		{"CRITICAL", models.SeverityCritical},
+		{"", models.SeverityWarning},
+		{"bogus", models.SeverityWarning},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			if got := minNotificationSeverity(tt.input); got != tt.want {
+				t.Errorf("minNotificationSeverity(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
 	}
 }
 
