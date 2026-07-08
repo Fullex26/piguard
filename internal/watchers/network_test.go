@@ -120,8 +120,11 @@ func TestNetworkScanWatcher_NewDevice(t *testing.T) {
 		if e.Type != models.EventNetworkNewDevice {
 			t.Errorf("event type = %q, want %q", e.Type, models.EventNetworkNewDevice)
 		}
-		if e.Severity != models.SeverityInfo {
-			t.Errorf("severity = %v, want Info", e.Severity)
+		if e.Severity != models.SeverityWarning {
+			t.Errorf("severity = %v, want Warning", e.Severity)
+		}
+		if e.Suggested == "" {
+			t.Error("expected suggested action for new device event")
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for new device event")

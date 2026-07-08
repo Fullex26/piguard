@@ -206,7 +206,7 @@ func TestNetlinkWatcher_Check_ClosedPortPublishesEvent(t *testing.T) {
 	}
 
 	w := &NetlinkWatcher{
-		Base: Base{Cfg: cfg, Bus: bus},
+		Base:     Base{Cfg: cfg, Bus: bus},
 		labeller: analysers.NewPortLabeller(),
 		baseline: map[string]models.PortInfo{
 			"0.0.0.0:8080": {Address: "0.0.0.0:8080", ProcessName: "node"},
@@ -293,5 +293,33 @@ func TestNetlinkWatcher_IsIgnored(t *testing.T) {
 				t.Errorf("isIgnored(%q) = %v, want %v", tt.addr, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNetlinkWatcher_KnownPortDowngradesAllowedExposure(t *testing.T) {
+	cfg := &config.Config{
+		Ports: config.PortConfig{
+			Known: []config.KnownPort{
+				{Addr: "0.0.0.0:3001", Label: "Homepage", Risk: "allowed"},
+			},
+		},
+	}
+	bus := eventbus.New()
+	received := make(chan models.Event, 1)
+	bus.Subscribe(func(e models.Event) { received <- e })
+
+	w := &NetlinkWatcher{Base: Base{Cfg: cfg, Bus: bus}}
+	w.emitPortOpened(models.PortInfo{Address: "0.0.0.0:3001", ProcessName: "docker-proxy", IsExposed: true})
+
+	select {
+	case e := <-received:
+		if e.Severity != models.SeverityInfo {
+			t.Fatalf("severity = %s, want info", e.Severity)
+		}
+		if e.Suggested != "" {
+			t.Fatalf("suggested = %q, want empty", e.Suggested)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for port event")
 	}
 }

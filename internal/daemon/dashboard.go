@@ -24,6 +24,8 @@ type dashboardSummary struct {
 	BySeverity      map[string]int `json:"by_severity"`
 	RecentOutages   int            `json:"recent_outages"`
 	NewDevices      int            `json:"new_devices"`
+	ExposedPorts    int            `json:"exposed_ports"`
+	HighSeverity    int            `json:"high_severity"`
 	ContainerStarts int            `json:"container_starts"`
 	GeneratedAt     time.Time      `json:"generated_at"`
 }
@@ -80,6 +82,7 @@ func registerDashboardHandlers(mux *http.ServeMux, db *store.Store) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		events = filterDashboardEvents(events, r.URL.Query().Get("type"), r.URL.Query().Get("severity"), r.URL.Query().Get("exposed"))
 		if len(events) > limit {
 			events = events[:limit]
 		}
@@ -151,9 +154,42 @@ func buildDashboardSummary(db *store.Store) (dashboardSummary, error) {
 		case models.EventContainerStart:
 			summary.ContainerStarts++
 		}
+		if event.Type == models.EventPortOpened && event.Port != nil && event.Port.IsExposed {
+			summary.ExposedPorts++
+		}
+		if event.Severity >= models.SeverityWarning {
+			summary.HighSeverity++
+		}
 	}
 
 	return summary, nil
+}
+
+func filterDashboardEvents(events []models.Event, eventType, severity, exposed string) []models.Event {
+	eventType = strings.TrimSpace(eventType)
+	severity = strings.TrimSpace(strings.ToLower(severity))
+	exposed = strings.TrimSpace(strings.ToLower(exposed))
+	if eventType == "" && severity == "" && exposed == "" {
+		return events
+	}
+
+	filtered := make([]models.Event, 0, len(events))
+	for _, event := range events {
+		if eventType != "" && string(event.Type) != eventType {
+			continue
+		}
+		if severity != "" && event.Severity.String() != severity {
+			continue
+		}
+		if exposed != "" {
+			wantExposed := exposed == "1" || exposed == "true" || exposed == "yes"
+			if event.Port == nil || event.Port.IsExposed != wantExposed {
+				continue
+			}
+		}
+		filtered = append(filtered, event)
+	}
+	return filtered
 }
 
 func renderDashboard(w http.ResponseWriter, db *store.Store) {
@@ -167,8 +203,20 @@ func renderDashboard(w http.ResponseWriter, db *store.Store) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	unknownDevices := filterDashboardEvents(events, string(models.EventNetworkNewDevice), "", "")
+	exposedPorts := filterDashboardEvents(events, string(models.EventPortOpened), "", "true")
+	highSeverity := filterHighSeverityEvents(events)
 	if len(events) > 25 {
 		events = events[:25]
+	}
+	if len(unknownDevices) > 10 {
+		unknownDevices = unknownDevices[:10]
+	}
+	if len(exposedPorts) > 10 {
+		exposedPorts = exposedPorts[:10]
+	}
+	if len(highSeverity) > 10 {
+		highSeverity = highSeverity[:10]
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -219,12 +267,16 @@ th { color: var(--muted); font-weight: 600; font-size: 12px; }
 <div class="metric"><span class="label">Last Alert</span><span class="value">%s</span></div>
 <div class="metric"><span class="label">Outages</span><span class="value">%d</span></div>
 <div class="metric"><span class="label">New Devices</span><span class="value">%d</span></div>
+<div class="metric"><span class="label">Exposed Ports</span><span class="value">%d</span></div>
+<div class="metric"><span class="label">Warnings</span><span class="value">%d</span></div>
 </div>`,
 		html.EscapeString(summary.GeneratedAt.Format("2006-01-02 15:04:05")),
 		summary.Events24h,
 		html.EscapeString(summary.LastAlert),
 		summary.RecentOutages,
 		summary.NewDevices,
+		summary.ExposedPorts,
+		summary.HighSeverity,
 	)
 
 	_, _ = fmt.Fprint(w, `<section><h2>Event Types</h2><div class="chips">`)
@@ -232,6 +284,10 @@ th { color: var(--muted); font-weight: 600; font-size: 12px; }
 		_, _ = fmt.Fprintf(w, `<span class="chip">%s %d</span>`, html.EscapeString(item.key), item.value)
 	}
 	_, _ = fmt.Fprint(w, `</div></section>`)
+
+	renderEventTable(w, "Unknown Devices", unknownDevices)
+	renderEventTable(w, "Exposed Ports", exposedPorts)
+	renderEventTable(w, "Warnings and Critical Events", highSeverity)
 
 	_, _ = fmt.Fprint(w, `<section><h2>Recent Events</h2><table><thead><tr><th>Time</th><th>Severity</th><th>Type</th><th>Message</th></tr></thead><tbody>`)
 	for _, event := range events {
@@ -245,6 +301,36 @@ th { color: var(--muted); font-weight: 600; font-size: 12px; }
 		)
 	}
 	_, _ = fmt.Fprint(w, `</tbody></table></section></main></body></html>`)
+}
+
+func filterHighSeverityEvents(events []models.Event) []models.Event {
+	filtered := make([]models.Event, 0, len(events))
+	for _, event := range events {
+		if event.Severity >= models.SeverityWarning {
+			filtered = append(filtered, event)
+		}
+	}
+	return filtered
+}
+
+func renderEventTable(w http.ResponseWriter, title string, events []models.Event) {
+	_, _ = fmt.Fprintf(w, `<section><h2>%s</h2>`, html.EscapeString(title))
+	if len(events) == 0 {
+		_, _ = fmt.Fprint(w, `<div class="muted">No events in the last 24 hours.</div></section>`)
+		return
+	}
+	_, _ = fmt.Fprint(w, `<table><thead><tr><th>Time</th><th>Severity</th><th>Type</th><th>Message</th></tr></thead><tbody>`)
+	for _, event := range events {
+		sev := event.Severity.String()
+		_, _ = fmt.Fprintf(w, `<tr><td>%s</td><td class="sev-%s">%s</td><td>%s</td><td>%s</td></tr>`,
+			html.EscapeString(event.Timestamp.Format("15:04:05")),
+			html.EscapeString(sev),
+			html.EscapeString(sev),
+			html.EscapeString(string(event.Type)),
+			html.EscapeString(event.Message),
+		)
+	}
+	_, _ = fmt.Fprint(w, `</tbody></table></section>`)
 }
 
 type countItem struct {

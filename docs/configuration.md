@@ -262,7 +262,7 @@ Endpoints:
 |---|---|---|---|
 | `enabled` | bool | `true` | Enable port monitoring |
 | `ignore` | []string | `["127.0.0.1:*", "::1:*"]` | Address patterns to ignore (supports `*` wildcard) |
-| `known` | []KnownPort | `[]` | Known ports (see below) |
+| `known` | []KnownPort | `[]` | Known ports (see below); matched ports are annotated and can be downgraded to info-level for expected services |
 | `cooldown` | string | `"15m"` | Deduplication cooldown for port events |
 
 **KnownPort fields:**
@@ -271,7 +271,7 @@ Endpoints:
 |---|---|---|
 | `addr` | string | Address in `host:port` format |
 | `label` | string | Human-readable label for the port |
-| `risk` | string | Risk level annotation |
+| `risk` | string | Risk level for matching ports. Use `allowed`/`low`/empty to record as info, `warning`/`high` to alert, or `critical` to escalate. |
 
 ### firewall
 

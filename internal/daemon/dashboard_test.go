@@ -25,11 +25,21 @@ func newTestDashboardStore(t *testing.T) *store.Store {
 		{
 			ID:        "network-1",
 			Type:      models.EventNetworkNewDevice,
-			Severity:  models.SeverityInfo,
+			Severity:  models.SeverityWarning,
 			Hostname:  "pi",
 			Timestamp: time.Now(),
 			Message:   "New device on network: 192.168.1.55 (aa:bb:cc:dd:ee:ff)",
 			Source:    "network-scan",
+		},
+		{
+			ID:        "port-1",
+			Type:      models.EventPortOpened,
+			Severity:  models.SeverityWarning,
+			Hostname:  "pi",
+			Timestamp: time.Now(),
+			Message:   "New listening port: 0.0.0.0:3001 -> docker-proxy",
+			Source:    "netlink",
+			Port:      &models.PortInfo{Address: "0.0.0.0:3001", IsExposed: true},
 		},
 		{
 			ID:        "outage-1",
@@ -67,11 +77,17 @@ func TestDashboardSummaryAPI(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &summary); err != nil {
 		t.Fatalf("decoding summary: %v", err)
 	}
-	if summary.Events24h != 2 {
-		t.Fatalf("Events24h = %d, want 2", summary.Events24h)
+	if summary.Events24h != 3 {
+		t.Fatalf("Events24h = %d, want 3", summary.Events24h)
 	}
 	if summary.NewDevices != 1 {
 		t.Errorf("NewDevices = %d, want 1", summary.NewDevices)
+	}
+	if summary.ExposedPorts != 1 {
+		t.Errorf("ExposedPorts = %d, want 1", summary.ExposedPorts)
+	}
+	if summary.HighSeverity != 3 {
+		t.Errorf("HighSeverity = %d, want 3", summary.HighSeverity)
 	}
 	if summary.RecentOutages != 1 {
 		t.Errorf("RecentOutages = %d, want 1", summary.RecentOutages)
@@ -100,6 +116,31 @@ func TestDashboardEventsAPILimit(t *testing.T) {
 	}
 }
 
+func TestDashboardEventsAPIFilters(t *testing.T) {
+	db := newTestDashboardStore(t)
+	mux := http.NewServeMux()
+	registerDashboardHandlers(mux, db)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/events?type=port.opened&exposed=true", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+
+	var events []models.Event
+	if err := json.Unmarshal(rec.Body.Bytes(), &events); err != nil {
+		t.Fatalf("decoding events: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1", len(events))
+	}
+	if events[0].Type != models.EventPortOpened {
+		t.Fatalf("event type = %s, want %s", events[0].Type, models.EventPortOpened)
+	}
+}
+
 func TestDashboardHTML(t *testing.T) {
 	db := newTestDashboardStore(t)
 	mux := http.NewServeMux()
@@ -118,5 +159,10 @@ func TestDashboardHTML(t *testing.T) {
 	}
 	if !strings.Contains(body, "network.new_device") {
 		t.Error("dashboard HTML missing event type")
+	}
+	for _, heading := range []string{"Unknown Devices", "Exposed Ports", "Warnings and Critical Events"} {
+		if !strings.Contains(body, heading) {
+			t.Errorf("dashboard HTML missing %q section", heading)
+		}
 	}
 }

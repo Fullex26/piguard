@@ -104,10 +104,12 @@ func (w *NetworkScanWatcher) check() {
 			w.Bus.Publish(models.Event{
 				ID:        fmt.Sprintf("%s-%s-%d", string(models.EventNetworkNewDevice), mac, time.Now().UnixNano()),
 				Type:      models.EventNetworkNewDevice,
-				Severity:  models.SeverityInfo,
+				Severity:  models.SeverityWarning,
 				Hostname:  hostname,
 				Timestamp: time.Now(),
 				Message:   fmt.Sprintf("New device on network: %s (%s)", d.IP, mac),
+				Details:   "A MAC address appeared that was not in the current PiGuard network baseline.",
+				Suggested: "Confirm this device in NetAlertX, Pi-hole, or your router. If it is unknown, block it at the router or Pi-hole.",
 				Source:    "network-scan",
 			})
 		}
