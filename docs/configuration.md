@@ -28,7 +28,7 @@ notifications:
 Store the actual token and chat ID in `/etc/piguard/env`:
 
 ```
-PIGUARD_TELEGRAM_TOKEN=123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
+PIGUARD_TELEGRAM_TOKEN=<bot-token-from-BotFather>
 PIGUARD_TELEGRAM_CHAT_ID=-1001234567890
 ```
 
@@ -46,7 +46,7 @@ notifications:
     enabled: false
     bot_token: "${PIGUARD_TELEGRAM_TOKEN}"    # From @BotFather
     chat_id: "${PIGUARD_TELEGRAM_CHAT_ID}"    # Target chat/group ID
-    interactive: true                          # Enable /commands in Telegram
+    interactive: false                         # Outbound alerts only (secure default)
 
   ntfy:
     enabled: false
@@ -141,7 +141,7 @@ file_integrity:
 # -- Security tool log monitoring (ClamAV / rkhunter) --
 security_tools:
   enabled: false
-  clamav_log: "/var/log/clamav/clamav.log"
+  clamav_log: "/var/log/piguard/clamav-scan.log"
   rkhunter_log: "/var/log/rkhunter.log"
   poll_interval: "30s"
 
@@ -212,7 +212,7 @@ logging:
 | `enabled` | bool | `false` | Enable Telegram notifications |
 | `bot_token` | string | `""` | Bot API token from @BotFather |
 | `chat_id` | string | `""` | Target chat/group ID |
-| `interactive` | bool | `true` | Enable two-way bot commands (starts the TelegramBotWatcher) |
+| `interactive` | bool | `false` | Enable two-way bot commands (starts the TelegramBotWatcher) |
 
 When enabled, `bot_token` and `chat_id` are both required or validation fails.
 
@@ -362,7 +362,7 @@ Use `expect_policy` or `expect_rule` (or both) per chain entry.
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | bool | `false` | Enable ClamAV/rkhunter log monitoring |
-| `clamav_log` | string | `"/var/log/clamav/clamav.log"` | ClamAV log path |
+| `clamav_log` | string | `"/var/log/piguard/clamav-scan.log"` | Dedicated ClamAV filesystem scan log |
 | `rkhunter_log` | string | `"/var/log/rkhunter.log"` | rkhunter log path |
 | `poll_interval` | string | `"30s"` | Log polling interval |
 

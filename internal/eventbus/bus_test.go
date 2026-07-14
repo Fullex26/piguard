@@ -1,6 +1,7 @@
 package eventbus
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -93,6 +94,30 @@ func TestPublish_EventDataIntegrity(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out")
+	}
+}
+
+func TestPublish_PreservesOrderPerSubscriber(t *testing.T) {
+	bus := New()
+	received := make(chan string, 100)
+	bus.Subscribe(func(event models.Event) {
+		received <- event.ID
+	})
+
+	for i := range 100 {
+		bus.Publish(models.Event{ID: fmt.Sprintf("event-%03d", i)})
+	}
+
+	for i := range 100 {
+		want := fmt.Sprintf("event-%03d", i)
+		select {
+		case got := <-received:
+			if got != want {
+				t.Fatalf("event %d = %q, want %q", i, got, want)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for event %d", i)
+		}
 	}
 }
 

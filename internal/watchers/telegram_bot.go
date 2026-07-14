@@ -29,16 +29,16 @@ import (
 // TelegramBotWatcher polls for incoming Telegram messages and handles commands
 type TelegramBotWatcher struct {
 	Base
-	token          string
-	chatID         string
-	client         *http.Client
-	offset         int
-	labeller       *analysers.PortLabeller
-	store          *store.Store
-	BackupWatcher      *BackupWatcher      // nil when backup is disabled
-	AutoUpdateWatcher  *AutoUpdateWatcher  // always set; toggled via Telegram
-	menuMu             sync.Mutex          // protects lastMenuMsgID
-	lastMenuMsgID      int                 // message_id of current navigation message (for edit-in-place)
+	token             string
+	chatID            string
+	client            *http.Client
+	offset            int
+	labeller          *analysers.PortLabeller
+	store             *store.Store
+	BackupWatcher     *BackupWatcher     // nil when backup is disabled
+	AutoUpdateWatcher *AutoUpdateWatcher // always set; toggled via Telegram
+	menuMu            sync.Mutex         // protects lastMenuMsgID
+	lastMenuMsgID     int                // message_id of current navigation message (for edit-in-place)
 }
 
 func NewTelegramBotWatcher(cfg *config.Config, bus *eventbus.Bus, db *store.Store) *TelegramBotWatcher {
@@ -53,6 +53,13 @@ func NewTelegramBotWatcher(cfg *config.Config, bus *eventbus.Bus, db *store.Stor
 }
 
 func (w *TelegramBotWatcher) Name() string { return "telegram-bot" }
+
+func (w *TelegramBotWatcher) httpClient() *http.Client {
+	if w.client != nil {
+		return w.client
+	}
+	return http.DefaultClient
+}
 
 func (w *TelegramBotWatcher) getMenuMsgID() int {
 	w.menuMu.Lock()
@@ -96,12 +103,12 @@ func (w *TelegramBotWatcher) poll(ctx context.Context) {
 		return
 	}
 
-	resp, err := w.client.Do(req)
+	resp, err := w.httpClient().Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
 			return // context cancelled, shutting down
 		}
-		slog.Error("telegram poll failed", "error", err)
+		slog.Error("telegram poll failed", "error", redactTelegramError(err, w.token))
 		time.Sleep(5 * time.Second)
 		return
 	}
@@ -255,9 +262,9 @@ func (w *TelegramBotWatcher) sendReply(text string) {
 	data.Set("parse_mode", "HTML")
 	data.Set("text", text)
 
-	resp, err := http.PostForm(apiURL, data)
+	resp, err := w.httpClient().PostForm(apiURL, data)
 	if err != nil {
-		slog.Error("telegram reply failed", "error", err)
+		slog.Error("telegram reply failed", "error", redactTelegramError(err, w.token))
 		return
 	}
 	resp.Body.Close()
@@ -267,6 +274,17 @@ func (w *TelegramBotWatcher) sendReply(text string) {
 type InlineButton struct {
 	Text string `json:"text"`
 	Data string `json:"callback_data"`
+}
+
+func redactTelegramError(err error, token string) string {
+	if err == nil {
+		return ""
+	}
+	message := err.Error()
+	if token != "" {
+		message = strings.ReplaceAll(message, token, "[REDACTED]")
+	}
+	return message
 }
 
 // sendReplyWithKeyboard sends a message with an inline keyboard.
@@ -285,9 +303,9 @@ func (w *TelegramBotWatcher) sendReplyWithKeyboard(text string, buttons [][]Inli
 	data.Set("text", text)
 	data.Set("reply_markup", string(markup))
 
-	resp, err := http.PostForm(apiURL, data)
+	resp, err := w.httpClient().PostForm(apiURL, data)
 	if err != nil {
-		slog.Error("telegram reply with keyboard failed", "error", err)
+		slog.Error("telegram reply with keyboard failed", "error", redactTelegramError(err, w.token))
 		return
 	}
 	resp.Body.Close()
@@ -309,9 +327,9 @@ func (w *TelegramBotWatcher) sendReplyWithKeyboardReturnID(text string, buttons 
 	data.Set("text", text)
 	data.Set("reply_markup", string(markup))
 
-	resp, err := http.PostForm(apiURL, data)
+	resp, err := w.httpClient().PostForm(apiURL, data)
 	if err != nil {
-		slog.Error("telegram reply with keyboard failed", "error", err)
+		slog.Error("telegram reply with keyboard failed", "error", redactTelegramError(err, w.token))
 		return 0
 	}
 	defer resp.Body.Close()
@@ -358,9 +376,9 @@ func (w *TelegramBotWatcher) editMessage(messageID int, text string, buttons [][
 		data.Set("reply_markup", string(markup))
 	}
 
-	resp, err := http.PostForm(apiURL, data)
+	resp, err := w.httpClient().PostForm(apiURL, data)
 	if err != nil {
-		slog.Error("telegram editMessage failed", "error", err)
+		slog.Error("telegram editMessage failed", "error", redactTelegramError(err, w.token))
 		w.setMenuMsgID(w.sendReplyWithKeyboardReturnID(text, buttons))
 		return
 	}
@@ -386,7 +404,7 @@ func (w *TelegramBotWatcher) answerCallbackQuery(callbackID string) {
 	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/answerCallbackQuery", w.token)
 	data := url.Values{}
 	data.Set("callback_query_id", callbackID)
-	resp, err := http.PostForm(apiURL, data)
+	resp, err := w.httpClient().PostForm(apiURL, data)
 	if err != nil {
 		return
 	}
@@ -640,86 +658,27 @@ func (w *TelegramBotWatcher) cmdDocker() string {
 // cmdDockerRouter dispatches /docker subcommands. With no subcommand it falls
 // back to the container-list view so existing behaviour is preserved.
 func (w *TelegramBotWatcher) cmdDockerRouter(parts []string) string {
-	if len(parts) < 2 {
-		return w.cmdDocker()
+	if len(parts) >= 3 && strings.EqualFold(parts[1], "logs") {
+		return w.cmdDockerLogs(parts[2:])
 	}
-	args := parts[2:] // everything after the subcommand
-	switch strings.ToLower(parts[1]) {
-	case "stop":
-		return w.cmdDockerStop(args)
-	case "restart":
-		return w.cmdDockerRestart(args)
-	case "remove", "rm":
-		return w.cmdDockerRemove(args)
-	case "fix":
-		return w.cmdDockerFix(args)
-	case "logs":
-		return w.cmdDockerLogs(args)
-	case "prune":
-		return w.cmdDockerPrune(args)
-	default:
-		return w.cmdDocker() + "\n\n<i>Usage: /docker [stop|restart|remove|fix|logs|prune] &lt;name&gt;</i>"
-	}
+	return w.cmdDocker() + "\n\n<i>Remote Docker mutations are disabled. Read-only usage: /docker logs &lt;name&gt;</i>"
 }
 
 func (w *TelegramBotWatcher) cmdDockerStop(args []string) string {
-	if len(args) == 0 {
-		return "Usage: /docker stop &lt;name&gt;"
-	}
-	name := args[0]
-	out, err := exec.Command("docker", "stop", name).CombinedOutput()
-	if err != nil {
-		return fmt.Sprintf("❌ Failed to stop <b>%s</b>: %s",
-			html.EscapeString(name), html.EscapeString(strings.TrimSpace(string(out))))
-	}
-	return fmt.Sprintf("⏹️ Container <b>%s</b> stopped.", html.EscapeString(name))
+	return "Remote Docker mutations are disabled."
 }
 
 func (w *TelegramBotWatcher) cmdDockerRestart(args []string) string {
-	if len(args) == 0 {
-		return "Usage: /docker restart &lt;name&gt;"
-	}
-	name := args[0]
-	out, err := exec.Command("docker", "restart", name).CombinedOutput()
-	if err != nil {
-		return fmt.Sprintf("❌ Failed to restart <b>%s</b>: %s",
-			html.EscapeString(name), html.EscapeString(strings.TrimSpace(string(out))))
-	}
-	return fmt.Sprintf("🔄 Container <b>%s</b> restarted.", html.EscapeString(name))
+	return "Remote Docker mutations are disabled."
 }
 
 func (w *TelegramBotWatcher) cmdDockerRemove(args []string) string {
-	if len(args) == 0 {
-		return "Usage: /docker remove &lt;name&gt; CONFIRM"
-	}
-	name := args[0]
-	safeName := html.EscapeString(name)
-	if len(args) < 2 || strings.ToUpper(args[len(args)-1]) != "CONFIRM" {
-		w.sendReplyWithKeyboard(
-			fmt.Sprintf("⚠️ This will force-remove container <b>%s</b>.", safeName),
-			[][]InlineButton{{{Text: "🗑️ Remove " + name, Data: "docker:rm:" + name}}})
-		return ""
-	}
-	out, err := exec.Command("docker", "rm", "-f", name).CombinedOutput()
-	if err != nil {
-		return fmt.Sprintf("❌ Failed to remove <b>%s</b>: %s",
-			safeName, html.EscapeString(strings.TrimSpace(string(out))))
-	}
-	return fmt.Sprintf("🗑️ Container <b>%s</b> removed.", safeName)
+	return "Remote Docker mutations are disabled."
 }
 
 // cmdDockerFix is a UX alias for restart, targeted at unhealthy/exited containers.
 func (w *TelegramBotWatcher) cmdDockerFix(args []string) string {
-	if len(args) == 0 {
-		return "Usage: /docker fix &lt;name&gt;"
-	}
-	name := args[0]
-	out, err := exec.Command("docker", "restart", name).CombinedOutput()
-	if err != nil {
-		return fmt.Sprintf("❌ Failed to restart <b>%s</b>: %s",
-			html.EscapeString(name), html.EscapeString(strings.TrimSpace(string(out))))
-	}
-	return fmt.Sprintf("🔧 Container <b>%s</b> restarted (fix applied).\nDockerWatcher will confirm recovery within 10s.", html.EscapeString(name))
+	return "Remote Docker mutations are disabled."
 }
 
 func (w *TelegramBotWatcher) cmdDockerLogs(args []string) string {
@@ -741,19 +700,7 @@ func (w *TelegramBotWatcher) cmdDockerLogs(args []string) string {
 }
 
 func (w *TelegramBotWatcher) cmdDockerPrune(args []string) string {
-	if len(args) == 0 || strings.ToUpper(args[len(args)-1]) != "CONFIRM" {
-		w.sendReplyWithKeyboard(
-			"⚠️ <b>Docker system prune</b> removes all stopped containers, unused networks, dangling images, and build cache.",
-			[][]InlineButton{{{Text: "🧹 Prune Docker", Data: "docker:prune"}}})
-		return ""
-	}
-	w.sendReply("🧹 Running docker system prune...")
-	out, err := exec.Command("docker", "system", "prune", "-f").CombinedOutput()
-	if err != nil {
-		return fmt.Sprintf("❌ Prune failed: %s", truncate(html.EscapeString(strings.TrimSpace(string(out))), 500))
-	}
-	return fmt.Sprintf("🧹 <b>Docker pruned:</b>\n<code>%s</code>",
-		truncate(html.EscapeString(strings.TrimSpace(string(out))), 800))
+	return "Remote Docker mutations are disabled."
 }
 
 // cmdStorageRouter dispatches /storage subcommands.
@@ -773,7 +720,7 @@ func (w *TelegramBotWatcher) cmdStorageRouter(parts []string) string {
 	case "all":
 		return w.cmdStorageAll(args)
 	default:
-		return w.cmdStorageReport() + "\n\n<i>Usage: /storage [images|volumes|apt|all] CONFIRM</i>"
+		return w.cmdStorageReport() + "\n\n<i>Remote cleanup actions are disabled.</i>"
 	}
 }
 
@@ -806,108 +753,23 @@ func (w *TelegramBotWatcher) cmdStorageReport() string {
 		b.WriteString("</code>\n")
 	}
 
-	b.WriteString("\n<i>To reclaim space: /storage images|volumes|apt|all CONFIRM</i>")
 	return b.String()
 }
 
 func (w *TelegramBotWatcher) cmdStorageImages(args []string) string {
-	if len(args) == 0 || strings.ToUpper(args[len(args)-1]) != "CONFIRM" {
-		w.sendReplyWithKeyboard(
-			"⚠️ <b>Prune unused Docker images</b> — removes all images not referenced by a container.",
-			[][]InlineButton{{{Text: "🧹 Prune Images", Data: "storage:images"}}})
-		return ""
-	}
-	w.sendReply("🧹 Pruning Docker images...")
-	out, err := exec.Command("docker", "image", "prune", "-af").CombinedOutput()
-	if err != nil {
-		return fmt.Sprintf("❌ Image prune failed: %s", truncate(html.EscapeString(strings.TrimSpace(string(out))), 500))
-	}
-	return fmt.Sprintf("🧹 <b>Images pruned:</b>\n<code>%s</code>",
-		truncate(html.EscapeString(strings.TrimSpace(string(out))), 800))
+	return "Remote storage mutations are disabled."
 }
 
 func (w *TelegramBotWatcher) cmdStorageVolumes(args []string) string {
-	if len(args) == 0 || strings.ToUpper(args[len(args)-1]) != "CONFIRM" {
-		w.sendReplyWithKeyboard(
-			"⚠️ <b>Prune unused Docker volumes</b> — removes volumes not attached to any container.",
-			[][]InlineButton{{{Text: "🧹 Prune Volumes", Data: "storage:volumes"}}})
-		return ""
-	}
-	w.sendReply("🧹 Pruning Docker volumes...")
-	out, err := exec.Command("docker", "volume", "prune", "-f").CombinedOutput()
-	if err != nil {
-		return fmt.Sprintf("❌ Volume prune failed: %s", truncate(html.EscapeString(strings.TrimSpace(string(out))), 500))
-	}
-	return fmt.Sprintf("🧹 <b>Volumes pruned:</b>\n<code>%s</code>",
-		truncate(html.EscapeString(strings.TrimSpace(string(out))), 800))
+	return "Remote storage mutations are disabled."
 }
 
 func (w *TelegramBotWatcher) cmdStorageApt(args []string) string {
-	if len(args) == 0 || strings.ToUpper(args[len(args)-1]) != "CONFIRM" {
-		w.sendReplyWithKeyboard(
-			"⚠️ <b>Clean apt cache</b> — runs <code>apt-get clean &amp;&amp; apt-get autoremove -y</code>.",
-			[][]InlineButton{{{Text: "🧹 Clean apt", Data: "storage:apt"}}})
-		return ""
-	}
-	w.sendReply("🧹 Cleaning apt cache...")
-	// apt-get clean never fails; apt-get autoremove may exit non-zero on warnings
-	cleanOut, _ := exec.Command("apt-get", "clean").CombinedOutput()
-	removeOut, removeErr := exec.Command("apt-get", "autoremove", "-y").CombinedOutput()
-
-	var b strings.Builder
-	b.WriteString("🧹 <b>apt cache cleaned</b>\n")
-	if len(strings.TrimSpace(string(cleanOut))) > 0 {
-		b.WriteString(fmt.Sprintf("<code>%s</code>\n", truncate(html.EscapeString(strings.TrimSpace(string(cleanOut))), 300)))
-	}
-	if removeErr != nil {
-		b.WriteString(fmt.Sprintf("⚠️ autoremove: <code>%s</code>", truncate(html.EscapeString(strings.TrimSpace(string(removeOut))), 400)))
-	} else {
-		b.WriteString(fmt.Sprintf("✅ autoremove: <code>%s</code>", truncate(html.EscapeString(strings.TrimSpace(string(removeOut))), 400)))
-	}
-	return b.String()
+	return "Remote storage mutations are disabled."
 }
 
 func (w *TelegramBotWatcher) cmdStorageAll(args []string) string {
-	if len(args) == 0 || strings.ToUpper(args[len(args)-1]) != "CONFIRM" {
-		w.sendReplyWithKeyboard(
-			"⚠️ <b>Full storage cleanup</b> — prunes Docker images, volumes, and apt cache.",
-			[][]InlineButton{{{Text: "🧹 Full Cleanup", Data: "storage:all"}}})
-		return ""
-	}
-	w.sendReply("🧹 Running full storage cleanup...")
-
-	var b strings.Builder
-	b.WriteString("🧹 <b>Full storage cleanup</b>\n\n")
-
-	// Images
-	imgOut, imgErr := exec.Command("docker", "image", "prune", "-af").CombinedOutput()
-	if imgErr != nil {
-		b.WriteString(fmt.Sprintf("❌ Images: %s\n", truncate(html.EscapeString(strings.TrimSpace(string(imgOut))), 200)))
-	} else {
-		// Extract the "Total reclaimed space" line if present
-		reclaimed := extractReclaimedLine(string(imgOut))
-		b.WriteString(fmt.Sprintf("✅ Images pruned%s\n", reclaimed))
-	}
-
-	// Volumes
-	volOut, volErr := exec.Command("docker", "volume", "prune", "-f").CombinedOutput()
-	if volErr != nil {
-		b.WriteString(fmt.Sprintf("❌ Volumes: %s\n", truncate(html.EscapeString(strings.TrimSpace(string(volOut))), 200)))
-	} else {
-		reclaimed := extractReclaimedLine(string(volOut))
-		b.WriteString(fmt.Sprintf("✅ Volumes pruned%s\n", reclaimed))
-	}
-
-	// apt
-	exec.Command("apt-get", "clean").Run() //nolint:errcheck
-	removeOut, removeErr := exec.Command("apt-get", "autoremove", "-y").CombinedOutput()
-	if removeErr != nil {
-		b.WriteString(fmt.Sprintf("⚠️ apt autoremove: %s\n", truncate(html.EscapeString(strings.TrimSpace(string(removeOut))), 200)))
-	} else {
-		b.WriteString("✅ apt cache cleaned\n")
-	}
-
-	return b.String()
+	return "Remote storage mutations are disabled."
 }
 
 // extractReclaimedLine returns " — <Total reclaimed space: X>" if found in docker output.
@@ -1331,20 +1193,7 @@ func (w *TelegramBotWatcher) cmdReport() string {
 }
 
 func (w *TelegramBotWatcher) cmdReboot(parts []string) string {
-	if len(parts) < 2 || strings.ToUpper(parts[1]) != "CONFIRM" {
-		w.sendReplyWithKeyboard("⚠️ <b>Reboot requires confirmation</b>",
-			[][]InlineButton{{{Text: "🔄 Reboot Now", Data: "reboot:confirm"}}})
-		return ""
-	}
-
-	w.sendReply("🔄 Rebooting in 5 seconds...")
-
-	go func() {
-		time.Sleep(5 * time.Second)
-		_ = exec.Command("reboot").Run()
-	}()
-
-	return ""
+	return "Remote reboot is disabled. Use an authenticated SSH session."
 }
 
 func (w *TelegramBotWatcher) cmdDoctor() string {
@@ -1382,47 +1231,11 @@ func (w *TelegramBotWatcher) cmdUpdates() string {
 		}
 		b.WriteString(fmt.Sprintf("  • %s\n", html.EscapeString(name)))
 	}
-	b.WriteString("\nTo upgrade: /update CONFIRM")
 	return b.String()
 }
 
 func (w *TelegramBotWatcher) cmdUpdate(parts []string) string {
-	if len(parts) < 2 || strings.ToUpper(parts[1]) != "CONFIRM" {
-		w.sendReplyWithKeyboard("⚠️ <b>System upgrade requires confirmation</b>\n\nThis will run <code>apt-get update && apt-get upgrade -y</code>.",
-			[][]InlineButton{{{Text: "📦 Run Update", Data: "update:confirm"}}})
-		return ""
-	}
-
-	w.sendReply("📦 Running system update... this may take a few minutes.")
-
-	// apt-get update
-	updateOut, err := exec.Command("apt-get", "update").CombinedOutput()
-	if err != nil {
-		return fmt.Sprintf("❌ <b>apt-get update failed</b>\n<code>%s</code>",
-			truncate(html.EscapeString(strings.TrimSpace(string(updateOut))), 500))
-	}
-
-	// apt-get upgrade -y
-	upgradeOut, err := exec.Command("apt-get", "upgrade", "-y").CombinedOutput()
-	if err != nil {
-		return fmt.Sprintf("❌ <b>apt-get upgrade failed</b>\n<code>%s</code>",
-			truncate(html.EscapeString(strings.TrimSpace(string(upgradeOut))), 500))
-	}
-
-	count := parseUpgradeCount(string(upgradeOut))
-	var b strings.Builder
-	if count > 0 {
-		b.WriteString(fmt.Sprintf("✅ <b>%d package(s) upgraded</b>\n", count))
-	} else {
-		b.WriteString("✅ <b>Already up to date</b>\n")
-	}
-
-	// Check reboot-required
-	if _, err := os.Stat("/var/run/reboot-required"); err == nil {
-		b.WriteString("\n⚠️ <b>Reboot required</b> — send /reboot CONFIRM")
-	}
-
-	return b.String()
+	return "Remote package upgrades are disabled. Unattended upgrades remain managed by systemd."
 }
 
 // ── Helper functions ──
@@ -1571,7 +1384,7 @@ func (w *TelegramBotWatcher) cmdBackupRouter(parts []string) string {
 	case "status":
 		return w.cmdBackupStatus()
 	case "now":
-		return w.cmdBackupNow(parts[2:])
+		return "Remote backup execution is disabled. Scheduled backups are unaffected."
 	default:
 		return "Usage: /backup [status|now]"
 	}
@@ -1582,14 +1395,7 @@ func (w *TelegramBotWatcher) cmdBackupStatus() string {
 }
 
 func (w *TelegramBotWatcher) cmdBackupNow(args []string) string {
-	if len(args) > 0 && strings.ToUpper(args[0]) == "CONFIRM" {
-		return w.BackupWatcher.RunBackup()
-	}
-
-	w.sendReplyWithKeyboard("💾 <b>Run backup now?</b>\nThis will rsync to "+
-		w.BackupWatcher.Cfg.Backup.Destination,
-		[][]InlineButton{{{Text: "💾 Start Backup", Data: "backup:confirm"}}})
-	return ""
+	return "Remote backup execution is disabled. Scheduled backups are unaffected."
 }
 
 // ── Auto-update commands ──
@@ -1602,121 +1408,7 @@ func (w *TelegramBotWatcher) cmdAutoUpdateRouter(parts []string) string {
 	if len(parts) < 2 {
 		return w.AutoUpdateWatcher.GetStatus()
 	}
-
-	switch strings.ToLower(parts[1]) {
-	case "on":
-		w.AutoUpdateWatcher.SetEnabled(true)
-		w.persistAutoUpdateConfig()
-		return "✅ Auto-update <b>enabled</b>"
-	case "off":
-		w.AutoUpdateWatcher.SetEnabled(false)
-		w.persistAutoUpdateConfig()
-		return "❌ Auto-update <b>disabled</b>"
-	case "day":
-		if len(parts) < 3 {
-			return "Usage: /autoupdate day &lt;daily|sunday|monday|...&gt;"
-		}
-		day := strings.ToLower(parts[2])
-		valid := map[string]bool{
-			"daily": true, "sunday": true, "monday": true, "tuesday": true,
-			"wednesday": true, "thursday": true, "friday": true, "saturday": true,
-		}
-		if !valid[day] {
-			return "❌ Invalid day. Use: daily, sunday, monday, tuesday, wednesday, thursday, friday, saturday"
-		}
-		w.AutoUpdateWatcher.SetDay(day)
-		w.persistAutoUpdateConfig()
-		return fmt.Sprintf("📅 Auto-update day set to <b>%s</b>", capitalise(day))
-	case "time":
-		if len(parts) < 3 {
-			return "Usage: /autoupdate time &lt;HH:MM&gt;"
-		}
-		t := parts[2]
-		if !isValidTime(t) {
-			return "❌ Invalid time. Use 24h format: HH:MM (e.g. 03:00)"
-		}
-		w.AutoUpdateWatcher.SetTime(t)
-		w.persistAutoUpdateConfig()
-		return fmt.Sprintf("🕐 Auto-update time set to <b>%s</b>", t)
-	case "reboot":
-		if len(parts) < 3 {
-			return "Usage: /autoupdate reboot &lt;on|off&gt;"
-		}
-		switch strings.ToLower(parts[2]) {
-		case "on":
-			w.AutoUpdateWatcher.SetAutoReboot(true)
-			w.persistAutoUpdateConfig()
-			return "🔄 Auto-reboot <b>enabled</b>"
-		case "off":
-			w.AutoUpdateWatcher.SetAutoReboot(false)
-			w.persistAutoUpdateConfig()
-			return "🔄 Auto-reboot <b>disabled</b>"
-		default:
-			return "Usage: /autoupdate reboot &lt;on|off&gt;"
-		}
-	default:
-		return w.AutoUpdateWatcher.GetStatus() + "\n\n<i>Commands: /autoupdate [on|off|day|time|reboot]</i>"
-	}
-}
-
-// isValidTime checks if a string is valid HH:MM 24h format.
-func isValidTime(s string) bool {
-	if len(s) != 5 || s[2] != ':' {
-		return false
-	}
-	h, err1 := strconv.Atoi(s[:2])
-	m, err2 := strconv.Atoi(s[3:])
-	return err1 == nil && err2 == nil && h >= 0 && h <= 23 && m >= 0 && m <= 59
-}
-
-// persistAutoUpdateConfig writes the current auto-update settings to the config file.
-func (w *TelegramBotWatcher) persistAutoUpdateConfig() {
-	configPath := config.DefaultConfigPath
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		slog.Error("failed to read config for auto-update persistence", "error", err)
-		return
-	}
-
-	content := string(data)
-	cfg := w.Cfg.AutoUpdate
-
-	// Build the desired auto_update block
-	newBlock := fmt.Sprintf("auto_update:\n  enabled: %t\n  day_of_week: %q\n  time: %q\n  auto_reboot: %t\n  reboot_delay_minutes: %d\n",
-		cfg.Enabled, cfg.DayOfWeek, cfg.Time, cfg.AutoReboot, cfg.RebootDelayMinutes)
-
-	// Find and replace existing block, or append
-	if idx := strings.Index(content, "auto_update:"); idx >= 0 {
-		// Find the end of the block (next top-level key or EOF)
-		blockEnd := len(content)
-		lines := strings.Split(content[idx:], "\n")
-		offset := idx
-		for i, line := range lines {
-			if i == 0 {
-				offset += len(line) + 1
-				continue
-			}
-			// A non-empty line not starting with space = next top-level key
-			if len(line) > 0 && line[0] != ' ' && line[0] != '#' {
-				blockEnd = offset
-				break
-			}
-			offset += len(line) + 1
-		}
-		content = content[:idx] + newBlock + content[blockEnd:]
-	} else {
-		// Append to end
-		content += "\n" + newBlock
-	}
-
-	tmpPath := configPath + ".tmp"
-	if err := os.WriteFile(tmpPath, []byte(content), 0600); err != nil {
-		slog.Error("failed to write config for auto-update persistence", "error", err)
-		return
-	}
-	if err := os.Rename(tmpPath, configPath); err != nil {
-		slog.Error("failed to rename config for auto-update persistence", "error", err)
-	}
+	return "Remote auto-update changes are disabled. Configure updates locally."
 }
 
 // buildAutoUpdateView returns the auto-update settings view with action buttons.
@@ -1728,59 +1420,8 @@ func (w *TelegramBotWatcher) buildAutoUpdateView() (string, [][]InlineButton) {
 		text = "⏰ <b>Auto-Update</b>\n\n❌ Not available"
 	}
 
-	enableLabel := "✅ Disable"
-	enableData := "a:off"
-	if !w.Cfg.AutoUpdate.Enabled {
-		enableLabel = "❌ Enable"
-		enableData = "a:on"
-	}
-
-	rebootLabel := "🔄 Reboot: Off"
-	rebootData := "a:reboot:on"
-	if w.Cfg.AutoUpdate.AutoReboot {
-		rebootLabel = "🔄 Reboot: On"
-		rebootData = "a:reboot:off"
-	}
-
 	buttons := [][]InlineButton{
-		{{Text: enableLabel, Data: enableData}, {Text: rebootLabel, Data: rebootData}},
-		{{Text: "📅 Day", Data: "a:day"}, {Text: "🕐 Time", Data: "a:time"}},
 		{{Text: "◀️ Back", Data: "m:upd"}},
-	}
-
-	return text, buttons
-}
-
-// buildAutoUpdateDayPicker returns a day selection view.
-func (w *TelegramBotWatcher) buildAutoUpdateDayPicker() (string, [][]InlineButton) {
-	current := w.Cfg.AutoUpdate.DayOfWeek
-	if current == "" {
-		current = "daily"
-	}
-	text := fmt.Sprintf("📅 <b>Select Update Day</b>\n\nCurrent: <b>%s</b>", capitalise(current))
-
-	buttons := [][]InlineButton{
-		{{Text: "📆 Daily", Data: "a:day:daily"}, {Text: "Sun", Data: "a:day:sun"}, {Text: "Mon", Data: "a:day:mon"}},
-		{{Text: "Tue", Data: "a:day:tue"}, {Text: "Wed", Data: "a:day:wed"}, {Text: "Thu", Data: "a:day:thu"}},
-		{{Text: "Fri", Data: "a:day:fri"}, {Text: "Sat", Data: "a:day:sat"}},
-		{{Text: "◀️ Back", Data: "a:home"}},
-	}
-
-	return text, buttons
-}
-
-// buildAutoUpdateTimePicker returns a time selection view with common presets.
-func (w *TelegramBotWatcher) buildAutoUpdateTimePicker() (string, [][]InlineButton) {
-	current := w.Cfg.AutoUpdate.Time
-	if current == "" {
-		current = "03:00"
-	}
-	text := fmt.Sprintf("🕐 <b>Select Update Time</b>\n\nCurrent: <b>%s</b>\n\nOr use: <code>/autoupdate time HH:MM</code>", current)
-
-	buttons := [][]InlineButton{
-		{{Text: "01:00", Data: "a:time:01:00"}, {Text: "02:00", Data: "a:time:02:00"}, {Text: "03:00", Data: "a:time:03:00"}},
-		{{Text: "04:00", Data: "a:time:04:00"}, {Text: "05:00", Data: "a:time:05:00"}, {Text: "06:00", Data: "a:time:06:00"}},
-		{{Text: "◀️ Back", Data: "a:home"}},
 	}
 
 	return text, buttons
@@ -1788,73 +1429,9 @@ func (w *TelegramBotWatcher) buildAutoUpdateTimePicker() (string, [][]InlineButt
 
 // handleAutoUpdateAction routes auto-update button presses.
 func (w *TelegramBotWatcher) handleAutoUpdateAction(data string) {
-	switch {
-	case data == "a:home":
-		text, buttons := w.buildAutoUpdateView()
-		w.editMessage(w.getMenuMsgID(), text, buttons)
-
-	case data == "a:on":
-		if w.AutoUpdateWatcher != nil {
-			w.AutoUpdateWatcher.SetEnabled(true)
-			w.persistAutoUpdateConfig()
-		}
-		text, buttons := w.buildAutoUpdateView()
-		w.editMessage(w.getMenuMsgID(), text, buttons)
-
-	case data == "a:off":
-		if w.AutoUpdateWatcher != nil {
-			w.AutoUpdateWatcher.SetEnabled(false)
-			w.persistAutoUpdateConfig()
-		}
-		text, buttons := w.buildAutoUpdateView()
-		w.editMessage(w.getMenuMsgID(), text, buttons)
-
-	case data == "a:reboot:on":
-		if w.AutoUpdateWatcher != nil {
-			w.AutoUpdateWatcher.SetAutoReboot(true)
-			w.persistAutoUpdateConfig()
-		}
-		text, buttons := w.buildAutoUpdateView()
-		w.editMessage(w.getMenuMsgID(), text, buttons)
-
-	case data == "a:reboot:off":
-		if w.AutoUpdateWatcher != nil {
-			w.AutoUpdateWatcher.SetAutoReboot(false)
-			w.persistAutoUpdateConfig()
-		}
-		text, buttons := w.buildAutoUpdateView()
-		w.editMessage(w.getMenuMsgID(), text, buttons)
-
-	case data == "a:day":
-		text, buttons := w.buildAutoUpdateDayPicker()
-		w.editMessage(w.getMenuMsgID(), text, buttons)
-
-	case strings.HasPrefix(data, "a:day:"):
-		dayCode := strings.TrimPrefix(data, "a:day:")
-		dayMap := map[string]string{
-			"daily": "daily", "sun": "sunday", "mon": "monday", "tue": "tuesday",
-			"wed": "wednesday", "thu": "thursday", "fri": "friday", "sat": "saturday",
-		}
-		if day, ok := dayMap[dayCode]; ok && w.AutoUpdateWatcher != nil {
-			w.AutoUpdateWatcher.SetDay(day)
-			w.persistAutoUpdateConfig()
-		}
-		text, buttons := w.buildAutoUpdateView()
-		w.editMessage(w.getMenuMsgID(), text, buttons)
-
-	case data == "a:time":
-		text, buttons := w.buildAutoUpdateTimePicker()
-		w.editMessage(w.getMenuMsgID(), text, buttons)
-
-	case strings.HasPrefix(data, "a:time:"):
-		t := strings.TrimPrefix(data, "a:time:")
-		if isValidTime(t) && w.AutoUpdateWatcher != nil {
-			w.AutoUpdateWatcher.SetTime(t)
-			w.persistAutoUpdateConfig()
-		}
-		text, buttons := w.buildAutoUpdateView()
-		w.editMessage(w.getMenuMsgID(), text, buttons)
-	}
+	w.editMessage(w.getMenuMsgID(), "Remote auto-update changes are disabled. Configure updates locally.", [][]InlineButton{
+		{{Text: "◀️ Back", Data: "m:upd"}},
+	})
 }
 
 // ── Menu system ──────────────────────────────────────────────────────────────
@@ -1868,7 +1445,6 @@ func (w *TelegramBotWatcher) buildMainMenu() (string, [][]InlineButton) {
 		{{Text: "🐳 Docker", Data: "m:dock"}, {Text: "💾 Storage", Data: "m:stor"}},
 		{{Text: "📦 Updates", Data: "m:upd"}, {Text: "🗄️ Backup", Data: "m:bak"}},
 		{{Text: "📊 Reports", Data: "m:rep"}, {Text: "⚙️ Diagnostics", Data: "m:diag"}},
-		{{Text: "⚠️ Danger Zone", Data: "m:danger"}},
 	}
 
 	return text, buttons
@@ -1925,10 +1501,9 @@ func (w *TelegramBotWatcher) buildSecurityView() (string, [][]InlineButton) {
 // buildDockerView returns the Docker overview category.
 func (w *TelegramBotWatcher) buildDockerView() (string, [][]InlineButton) {
 	text := w.cmdDocker()
-	text += "\n\n<i>Use text commands for container actions:\n/docker stop|restart|fix|logs|remove &lt;name&gt;</i>"
+	text += "\n\n<i>Read-only logs: /docker logs &lt;name&gt;</i>"
 
 	buttons := [][]InlineButton{
-		{{Text: "🧹 Prune", Data: "d:prune"}},
 		{{Text: "◀️ Back", Data: "m:home"}},
 	}
 
@@ -1940,8 +1515,6 @@ func (w *TelegramBotWatcher) buildStorageView() (string, [][]InlineButton) {
 	text := w.cmdStorageReport()
 
 	buttons := [][]InlineButton{
-		{{Text: "🖼️ Images", Data: "t:img"}, {Text: "📦 Volumes", Data: "t:vol"}},
-		{{Text: "🧹 apt", Data: "t:apt"}, {Text: "🧹 Full Cleanup", Data: "t:all"}},
 		{{Text: "◀️ Back", Data: "m:home"}},
 	}
 
@@ -1966,7 +1539,6 @@ func (w *TelegramBotWatcher) buildUpdatesView() (string, [][]InlineButton) {
 	}
 
 	buttons := [][]InlineButton{
-		{{Text: "📦 Run Update", Data: "u:run"}, {Text: "⏰ Auto-Update", Data: "a:home"}},
 		{{Text: "◀️ Back", Data: "m:home"}},
 	}
 
@@ -1982,16 +1554,7 @@ func (w *TelegramBotWatcher) buildBackupView() (string, [][]InlineButton) {
 		text = w.BackupWatcher.GetStatus()
 	}
 
-	var actionButtons []InlineButton
-	if w.BackupWatcher != nil {
-		actionButtons = append(actionButtons, InlineButton{Text: "💾 Backup Now", Data: "b:now"})
-	}
-
-	buttons := [][]InlineButton{}
-	if len(actionButtons) > 0 {
-		buttons = append(buttons, actionButtons)
-	}
-	buttons = append(buttons, []InlineButton{{Text: "◀️ Back", Data: "m:home"}})
+	buttons := [][]InlineButton{{{Text: "◀️ Back", Data: "m:home"}}}
 
 	return text, buttons
 }
@@ -2020,36 +1583,12 @@ func (w *TelegramBotWatcher) buildDiagnosticsView() (string, [][]InlineButton) {
 	return text, buttons
 }
 
-// buildDangerView returns the danger zone category.
-func (w *TelegramBotWatcher) buildDangerView() (string, [][]InlineButton) {
-	text := "⚠️ <b>Danger Zone</b>\n\n⚠️ Actions here affect system availability.\nProceed with caution."
-
-	buttons := [][]InlineButton{
-		{{Text: "🔄 Reboot", Data: "z:reboot"}},
-		{{Text: "◀️ Back", Data: "m:home"}},
-	}
-
-	return text, buttons
-}
-
 // buildDetailView wraps content with a single back button pointing to the parent category.
 func buildDetailView(content, backCallback string) (string, [][]InlineButton) {
 	buttons := [][]InlineButton{
 		{{Text: "◀️ Back", Data: backCallback}},
 	}
 	return content, buttons
-}
-
-// buildConfirmView returns a confirmation dialog with Confirm and Cancel buttons.
-func buildConfirmView(title, description, confirmData, cancelData string) (string, [][]InlineButton) {
-	text := fmt.Sprintf("⚠️ <b>%s</b>\n\n%s", title, description)
-	buttons := [][]InlineButton{
-		{
-			{Text: "✅ Confirm", Data: confirmData},
-			{Text: "❌ Cancel", Data: cancelData},
-		},
-	}
-	return text, buttons
 }
 
 // ── Menu navigation handlers ─────────────────────────────────────────────────
@@ -2077,8 +1616,6 @@ func (w *TelegramBotWatcher) handleMenuNav(data string) {
 		text, buttons = w.buildReportsView()
 	case "m:diag":
 		text, buttons = w.buildDiagnosticsView()
-	case "m:danger":
-		text, buttons = w.buildDangerView()
 	default:
 		text, buttons = w.buildMainMenu()
 	}
@@ -2139,151 +1676,27 @@ func (w *TelegramBotWatcher) handleSecurityDetail(data string) {
 }
 
 func (w *TelegramBotWatcher) handleDockerAction(data string) {
-	switch data {
-	case "d:prune":
-		text, buttons := buildConfirmView(
-			"Docker Prune",
-			"Remove all stopped containers, unused networks, dangling images, and build cache.",
-			"d:prune!", "m:dock")
-		w.editMessage(w.getMenuMsgID(), text, buttons)
-	case "d:prune!":
-		msgID := w.getMenuMsgID()
-		w.editMessage(msgID, "🧹 Running docker system prune...", nil)
-		go func() {
-			result := w.cmdDockerPrune([]string{"CONFIRM"})
-			if result != "" {
-				w.sendReply(result)
-			}
-			text, buttons := w.buildDockerView()
-			w.editMessage(msgID, text, buttons)
-		}()
-	}
+	w.editMessage(w.getMenuMsgID(), "Remote Docker mutations are disabled.", [][]InlineButton{
+		{{Text: "◀️ Back", Data: "m:dock"}},
+	})
 }
 
 func (w *TelegramBotWatcher) handleStorageAction(data string) {
-	switch data {
-	case "t:img":
-		text, buttons := buildConfirmView(
-			"Prune Docker Images",
-			"Remove all images not referenced by a container.",
-			"t:img!", "m:stor")
-		w.editMessage(w.getMenuMsgID(), text, buttons)
-	case "t:img!":
-		msgID := w.getMenuMsgID()
-		w.editMessage(msgID, "🧹 Pruning Docker images...", nil)
-		go func() {
-			result := w.cmdStorageImages([]string{"CONFIRM"})
-			if result != "" {
-				w.sendReply(result)
-			}
-			text, buttons := w.buildStorageView()
-			w.editMessage(msgID, text, buttons)
-		}()
-	case "t:vol":
-		text, buttons := buildConfirmView(
-			"Prune Docker Volumes",
-			"Remove volumes not attached to any container.",
-			"t:vol!", "m:stor")
-		w.editMessage(w.getMenuMsgID(), text, buttons)
-	case "t:vol!":
-		msgID := w.getMenuMsgID()
-		w.editMessage(msgID, "🧹 Pruning Docker volumes...", nil)
-		go func() {
-			result := w.cmdStorageVolumes([]string{"CONFIRM"})
-			if result != "" {
-				w.sendReply(result)
-			}
-			text, buttons := w.buildStorageView()
-			w.editMessage(msgID, text, buttons)
-		}()
-	case "t:apt":
-		text, buttons := buildConfirmView(
-			"Clean apt Cache",
-			"Run <code>apt-get clean &amp;&amp; apt-get autoremove -y</code>.",
-			"t:apt!", "m:stor")
-		w.editMessage(w.getMenuMsgID(), text, buttons)
-	case "t:apt!":
-		msgID := w.getMenuMsgID()
-		w.editMessage(msgID, "🧹 Cleaning apt cache...", nil)
-		go func() {
-			result := w.cmdStorageApt([]string{"CONFIRM"})
-			if result != "" {
-				w.sendReply(result)
-			}
-			text, buttons := w.buildStorageView()
-			w.editMessage(msgID, text, buttons)
-		}()
-	case "t:all":
-		text, buttons := buildConfirmView(
-			"Full Storage Cleanup",
-			"Prune Docker images, volumes, and apt cache.",
-			"t:all!", "m:stor")
-		w.editMessage(w.getMenuMsgID(), text, buttons)
-	case "t:all!":
-		msgID := w.getMenuMsgID()
-		w.editMessage(msgID, "🧹 Running full storage cleanup...", nil)
-		go func() {
-			result := w.cmdStorageAll([]string{"CONFIRM"})
-			if result != "" {
-				w.sendReply(result)
-			}
-			text, buttons := w.buildStorageView()
-			w.editMessage(msgID, text, buttons)
-		}()
-	}
+	w.editMessage(w.getMenuMsgID(), "Remote storage mutations are disabled.", [][]InlineButton{
+		{{Text: "◀️ Back", Data: "m:stor"}},
+	})
 }
 
 func (w *TelegramBotWatcher) handleUpdateAction(data string) {
-	switch data {
-	case "u:run":
-		text, buttons := buildConfirmView(
-			"System Update",
-			"Run <code>apt-get update &amp;&amp; apt-get upgrade -y</code>.",
-			"u:run!", "m:upd")
-		w.editMessage(w.getMenuMsgID(), text, buttons)
-	case "u:run!":
-		msgID := w.getMenuMsgID()
-		w.editMessage(msgID, "📦 Running system update...", nil)
-		go func() {
-			result := w.cmdUpdate([]string{"/update", "CONFIRM"})
-			if result != "" {
-				w.sendReply(result)
-			}
-			text, buttons := w.buildUpdatesView()
-			w.editMessage(msgID, text, buttons)
-		}()
-	}
+	w.editMessage(w.getMenuMsgID(), "Remote package upgrades are disabled.", [][]InlineButton{
+		{{Text: "◀️ Back", Data: "m:upd"}},
+	})
 }
 
 func (w *TelegramBotWatcher) handleBackupAction(data string) {
-	switch data {
-	case "b:now":
-		if w.BackupWatcher == nil {
-			w.editMessage(w.getMenuMsgID(), "❌ Backup is not enabled.", [][]InlineButton{
-				{{Text: "◀️ Back", Data: "m:home"}},
-			})
-			return
-		}
-		text, buttons := buildConfirmView(
-			"Run Backup Now",
-			"Rsync to "+w.BackupWatcher.Cfg.Backup.Destination,
-			"b:now!", "m:bak")
-		w.editMessage(w.getMenuMsgID(), text, buttons)
-	case "b:now!":
-		if w.BackupWatcher == nil {
-			return
-		}
-		msgID := w.getMenuMsgID()
-		w.editMessage(msgID, "⏳ Backup started...", nil)
-		go func() {
-			result := w.BackupWatcher.RunBackup()
-			if result != "" {
-				w.sendReply(result)
-			}
-			text, buttons := w.buildBackupView()
-			w.editMessage(msgID, text, buttons)
-		}()
-	}
+	w.editMessage(w.getMenuMsgID(), "Remote backup execution is disabled.", [][]InlineButton{
+		{{Text: "◀️ Back", Data: "m:bak"}},
+	})
 }
 
 func (w *TelegramBotWatcher) handleReportAction(data string) {
@@ -2307,18 +1720,7 @@ func (w *TelegramBotWatcher) handleDiagAction(data string) {
 }
 
 func (w *TelegramBotWatcher) handleDangerAction(data string) {
-	switch data {
-	case "z:reboot":
-		text, buttons := buildConfirmView(
-			"Reboot System",
-			"The Pi will reboot in 5 seconds. All connections will be dropped.",
-			"z:reboot!", "m:danger")
-		w.editMessage(w.getMenuMsgID(), text, buttons)
-	case "z:reboot!":
-		w.editMessage(w.getMenuMsgID(), "🔄 Rebooting in 5 seconds...", nil)
-		go func() {
-			time.Sleep(5 * time.Second)
-			_ = exec.Command("reboot").Run()
-		}()
-	}
+	w.editMessage(w.getMenuMsgID(), "Remote reboot is disabled. Use an authenticated SSH session.", [][]InlineButton{
+		{{Text: "◀️ Back", Data: "m:home"}},
+	})
 }

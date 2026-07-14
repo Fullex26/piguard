@@ -53,7 +53,7 @@ func (t *Telegram) send(text string) error {
 
 	resp, err := t.client.PostForm(apiURL, data)
 	if err != nil {
-		return fmt.Errorf("telegram send failed: %w", err)
+		return fmt.Errorf("telegram send failed: %s", redactTelegramError(err, t.token))
 	}
 	defer resp.Body.Close()
 
@@ -61,6 +61,17 @@ func (t *Telegram) send(text string) error {
 		return fmt.Errorf("telegram returned status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+func redactTelegramError(err error, token string) string {
+	if err == nil {
+		return ""
+	}
+	message := err.Error()
+	if token != "" {
+		message = strings.ReplaceAll(message, token, "[REDACTED]")
+	}
+	return message
 }
 
 func (t *Telegram) formatEvent(event models.Event) string {
@@ -86,11 +97,15 @@ func (t *Telegram) formatEvent(event models.Event) string {
 }
 
 // FormatDailySummary creates a daily summary message
-func FormatDailySummary(hostname string, health models.SystemHealth, lastAlert string) string {
+func FormatDailySummary(hostname string, health models.SystemHealth, lastAlert string, eventCount int) string {
 	var b strings.Builder
 
-	b.WriteString(fmt.Sprintf("✅ <b>PiGuard — %s — Daily Summary</b>\n\n", hostname))
-	b.WriteString("All clear — no security events in last 24h.\n\n")
+	b.WriteString(fmt.Sprintf("📊 <b>PiGuard — %s — Daily Summary</b>\n\n", hostname))
+	if eventCount == 0 {
+		b.WriteString("No security events recorded in the last 24h.\n\n")
+	} else {
+		b.WriteString(fmt.Sprintf("<b>%d event(s)</b> recorded in the last 24h. Review the dashboard for details.\n\n", eventCount))
+	}
 	b.WriteString("📊 <b>Status:</b>\n")
 	b.WriteString(fmt.Sprintf("  Disk: %d%% | RAM: %d%%", health.DiskUsagePercent, health.MemoryUsedPercent))
 

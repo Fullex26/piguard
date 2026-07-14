@@ -247,7 +247,7 @@ func (r *Runner) checkIPTables() CheckResult {
 		return CheckResult{
 			Category: "Dependencies", Name: "iptables",
 			Status: StatusWarn, Message: "Permission denied — firewall checks limited",
-			Fix: "sudo chmod u+s $(which iptables)",
+			Fix: "Run PiGuard with only the firewall-read privileges it requires",
 		}
 	}
 	return CheckResult{Category: "Dependencies", Name: "iptables", Status: StatusOK, Message: "Readable"}
@@ -298,7 +298,7 @@ func (r *Runner) checkRKHunter() CheckResult {
 		return CheckResult{
 			Category: "Dependencies", Name: "rkhunter",
 			Status: StatusWarn, Message: "Log not writable — /scan will fail",
-			Fix: "sudo chmod 666 /var/log/rkhunter.log",
+			Fix: "sudo chown root:adm /var/log/rkhunter.log && sudo chmod 640 /var/log/rkhunter.log",
 		}
 	}
 	return CheckResult{Category: "Dependencies", Name: "rkhunter", Status: StatusOK, Message: "Installed"}

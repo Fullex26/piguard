@@ -1,6 +1,7 @@
 package notifiers
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -176,6 +177,15 @@ func TestTelegram_formatEvent(t *testing.T) {
 	}
 }
 
+func TestRedactTelegramError(t *testing.T) {
+	token := "12345:secret-token"
+	err := fmt.Errorf("Post https://api.telegram.org/bot%s/sendMessage: timeout", token)
+	got := redactTelegramError(err, token)
+	if strings.Contains(got, token) || !strings.Contains(got, "[REDACTED]") {
+		t.Fatalf("token was not redacted: %q", got)
+	}
+}
+
 func TestFormatDailySummary(t *testing.T) {
 	health := models.SystemHealth{
 		DiskUsagePercent:  50,
@@ -185,7 +195,10 @@ func TestFormatDailySummary(t *testing.T) {
 		ListeningPorts:    5,
 	}
 
-	result := FormatDailySummary("pi", health, "2 hours ago")
+	result := FormatDailySummary("pi", health, "2 hours ago", 4)
+	if !strings.Contains(result, "4 event(s)") || strings.Contains(result, "All clear") {
+		t.Errorf("summary does not reflect event count: %q", result)
+	}
 	for _, want := range []string{"pi", "50%", "60%", "45°C", "3 running", "5", "2 hours ago"} {
 		if !strings.Contains(result, want) {
 			t.Errorf("FormatDailySummary() missing %q", want)
@@ -201,7 +214,7 @@ func TestFormatDailySummary_NoTemp(t *testing.T) {
 		ListeningPorts:    5,
 	}
 
-	result := FormatDailySummary("pi", health, "never")
+	result := FormatDailySummary("pi", health, "never", 0)
 	if strings.Contains(result, "Temp:") {
 		t.Error("should omit temperature when 0")
 	}
@@ -215,7 +228,7 @@ func TestFormatDailySummary_NoContainers(t *testing.T) {
 		ListeningPorts:    5,
 	}
 
-	result := FormatDailySummary("pi", health, "")
+	result := FormatDailySummary("pi", health, "", 0)
 	if strings.Contains(result, "Containers:") {
 		t.Error("should omit containers when 0")
 	}
@@ -228,7 +241,7 @@ func TestFormatDailySummary_EmptyLastAlert(t *testing.T) {
 		ListeningPorts:    5,
 	}
 
-	result := FormatDailySummary("pi", health, "")
+	result := FormatDailySummary("pi", health, "", 0)
 	if strings.Contains(result, "Last alert:") {
 		t.Error("should omit last alert when empty")
 	}

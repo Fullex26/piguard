@@ -24,7 +24,7 @@ notifications:
     enabled: false
     bot_token: "${PIGUARD_TELEGRAM_TOKEN}"
     chat_id: "${PIGUARD_TELEGRAM_CHAT_ID}"
-    interactive: true  # Enable /commands in Telegram
+    interactive: false # Outbound alerts only; enable explicitly for two-way commands
 
   ntfy:
     enabled: false
@@ -115,7 +115,7 @@ file_integrity:
 # ── Security tool log monitoring (ClamAV / rkhunter) ──
 security_tools:
   enabled: false
-  clamav_log: "/var/log/clamav/clamav.log"
+  clamav_log: "/var/log/piguard/clamav-scan.log"
   rkhunter_log: "/var/log/rkhunter.log"
   poll_interval: "30s"
 `

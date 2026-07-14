@@ -7,7 +7,7 @@ notifications:
     enabled: false
     bot_token: "${PIGUARD_TELEGRAM_TOKEN}"
     chat_id: "${PIGUARD_TELEGRAM_CHAT_ID}"
-    interactive: true  # Enable /commands in Telegram
+    interactive: false # Outbound alerts only; enable explicitly for two-way commands
 
   ntfy:
     enabled: false
@@ -68,7 +68,7 @@ baseline:
 
 # ── Docker ──
 docker:
-  enabled: true
+  enabled: false
   poll_interval: "10s"
   # Set to true to alert when containers stop gracefully (can be noisy)
   alert_on_stop: false
@@ -103,7 +103,7 @@ file_integrity:
 # ── Security tool log monitoring (ClamAV / rkhunter) ──
 security_tools:
   enabled: false
-  clamav_log: "/var/log/clamav/clamav.log"
+  clamav_log: "/var/log/piguard/clamav-scan.log"
   rkhunter_log: "/var/log/rkhunter.log"
   poll_interval: "30s"
 

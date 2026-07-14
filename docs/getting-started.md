@@ -119,7 +119,7 @@ notifications:
 Then create `/etc/piguard/env`:
 
 ```
-PIGUARD_TELEGRAM_TOKEN=123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
+PIGUARD_TELEGRAM_TOKEN=<bot-token-from-BotFather>
 PIGUARD_TELEGRAM_CHAT_ID=-1001234567890
 ```
 

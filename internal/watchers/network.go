@@ -2,6 +2,7 @@ package watchers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -15,8 +16,16 @@ import (
 )
 
 type networkDevice struct {
-	IP  string
-	MAC string
+	IP        string `json:"ip"`
+	MAC       string `json:"mac"`
+	Interface string `json:"interface,omitempty"`
+}
+
+const networkBaselineStateKey = "network.devices"
+
+type networkStateStore interface {
+	GetState(key string) (string, error)
+	SetState(key, value string) error
 }
 
 // NetworkScanWatcher monitors the local ARP neighbour table for unknown devices.
@@ -28,6 +37,12 @@ type NetworkScanWatcher struct {
 	ignoreMACs map[string]bool          // lowercase MAC → true
 	baseline   map[string]networkDevice // MAC → device
 	runIPNeigh func() ([]byte, error)   // injectable for tests
+	stateStore networkStateStore
+}
+
+func (w *NetworkScanWatcher) WithStateStore(stateStore networkStateStore) *NetworkScanWatcher {
+	w.stateStore = stateStore
+	return w
 }
 
 func NewNetworkScanWatcher(cfg *config.Config, bus *eventbus.Bus) *NetworkScanWatcher {
@@ -57,12 +72,12 @@ func (w *NetworkScanWatcher) Stop() error  { return nil }
 
 func (w *NetworkScanWatcher) Start(ctx context.Context) error {
 	slog.Info("starting network scan watcher", "interval", w.interval)
+	hadSavedBaseline := w.loadBaseline()
 
-	// Build initial baseline silently (no alerts for pre-existing devices).
+	// The first run learns silently. Later starts reconcile against persisted
+	// state so devices that joined while PiGuard was stopped are still reported.
 	if out, err := w.runIPNeigh(); err == nil {
-		for _, d := range parseIPNeigh(string(out)) {
-			w.baseline[d.MAC] = d
-		}
+		w.reconcileStartup(parseIPNeigh(string(out)), hadSavedBaseline)
 		slog.Info("network baseline established", "count", len(w.baseline))
 	} else {
 		slog.Warn("ip neigh not available at startup", "error", err)
@@ -93,27 +108,9 @@ func (w *NetworkScanWatcher) check() {
 		current[d.MAC] = d
 	}
 
-	hostname, _ := os.Hostname()
+	w.publishNewDevices(current)
 
-	// Detect new devices (unknown MAC).
-	for mac, d := range current {
-		if w.ignoreMACs[mac] {
-			continue
-		}
-		if _, known := w.baseline[mac]; !known {
-			w.Bus.Publish(models.Event{
-				ID:        fmt.Sprintf("%s-%s-%d", string(models.EventNetworkNewDevice), mac, time.Now().UnixNano()),
-				Type:      models.EventNetworkNewDevice,
-				Severity:  models.SeverityWarning,
-				Hostname:  hostname,
-				Timestamp: time.Now(),
-				Message:   fmt.Sprintf("New device on network: %s (%s)", d.IP, mac),
-				Details:   "A MAC address appeared that was not in the current PiGuard network baseline.",
-				Suggested: "Confirm this device in NetAlertX, Pi-hole, or your router. If it is unknown, block it at the router or Pi-hole.",
-				Source:    "network-scan",
-			})
-		}
-	}
+	hostname, _ := os.Hostname()
 
 	// Detect departed devices (opt-in — fire event and remove from baseline).
 	if w.alertLeave {
@@ -142,6 +139,75 @@ func (w *NetworkScanWatcher) check() {
 	// EventNetworkNewDevice alerts when their ARP entries reappear.
 	for mac, d := range current {
 		w.baseline[mac] = d
+	}
+	w.saveBaseline()
+}
+
+func (w *NetworkScanWatcher) reconcileStartup(devices []networkDevice, alertNew bool) {
+	current := make(map[string]networkDevice, len(devices))
+	for _, device := range devices {
+		current[device.MAC] = device
+	}
+	if alertNew {
+		w.publishNewDevices(current)
+	}
+	for mac, device := range current {
+		w.baseline[mac] = device
+	}
+	w.saveBaseline()
+}
+
+func (w *NetworkScanWatcher) publishNewDevices(current map[string]networkDevice) {
+	hostname, _ := os.Hostname()
+	for mac, d := range current {
+		if w.ignoreMACs[mac] {
+			continue
+		}
+		if _, known := w.baseline[mac]; !known {
+			w.Bus.Publish(models.Event{
+				ID:        fmt.Sprintf("%s-%s-%d", string(models.EventNetworkNewDevice), mac, time.Now().UnixNano()),
+				Type:      models.EventNetworkNewDevice,
+				Severity:  models.SeverityWarning,
+				Hostname:  hostname,
+				Timestamp: time.Now(),
+				Message:   fmt.Sprintf("New device on network: %s (%s)", d.IP, mac),
+				Details:   "A MAC address appeared that was not in the current PiGuard network baseline.",
+				Suggested: "Confirm this device in NetAlertX, Pi-hole, or your router. If it is unknown, block it at the router or Pi-hole.",
+				Source:    "network-scan",
+			})
+		}
+	}
+}
+
+func (w *NetworkScanWatcher) loadBaseline() bool {
+	if w.stateStore == nil {
+		return false
+	}
+	value, err := w.stateStore.GetState(networkBaselineStateKey)
+	if err != nil || value == "" {
+		return false
+	}
+	var devices map[string]networkDevice
+	if err := json.Unmarshal([]byte(value), &devices); err != nil {
+		slog.Warn("network baseline could not be decoded", "error", err)
+		return false
+	}
+	for mac, device := range devices {
+		w.baseline[strings.ToLower(mac)] = device
+	}
+	return true
+}
+
+func (w *NetworkScanWatcher) saveBaseline() {
+	if w.stateStore == nil {
+		return
+	}
+	value, err := json.Marshal(w.baseline)
+	if err != nil {
+		return
+	}
+	if err := w.stateStore.SetState(networkBaselineStateKey, string(value)); err != nil {
+		slog.Warn("network baseline could not be saved", "error", err)
 	}
 }
 
@@ -177,7 +243,17 @@ func parseIPNeigh(output string) []networkDevice {
 		}
 		ip := fields[0]
 		mac := strings.ToLower(fields[lladdrIdx+1])
-		devices = append(devices, networkDevice{IP: ip, MAC: mac})
+		iface := ""
+		for i, field := range fields {
+			if field == "dev" && i+1 < len(fields) {
+				iface = fields[i+1]
+				break
+			}
+		}
+		if strings.HasPrefix(iface, "br-") || iface == "docker0" || strings.HasPrefix(iface, "veth") {
+			continue
+		}
+		devices = append(devices, networkDevice{IP: ip, MAC: mac, Interface: iface})
 	}
 	return devices
 }

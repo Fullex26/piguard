@@ -8,7 +8,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const DefaultConfigPath = "/etc/piguard/config.yaml"
+const (
+	DefaultConfigPath = "/etc/piguard/config.yaml"
+	DefaultEnvPath    = "/etc/piguard/env"
+)
 
 type Config struct {
 	Notifications NotificationConfig  `yaml:"notifications"`
@@ -130,7 +133,7 @@ type WatchPath struct {
 
 type SecurityToolsConfig struct {
 	Enabled      bool   `yaml:"enabled"`
-	ClamAVLog    string `yaml:"clamav_log"`    // default: /var/log/clamav/clamav.log
+	ClamAVLog    string `yaml:"clamav_log"`    // default: /var/log/piguard/clamav-scan.log
 	RKHunterLog  string `yaml:"rkhunter_log"`  // default: /var/log/rkhunter.log
 	PollInterval string `yaml:"poll_interval"` // default: 30s
 }
@@ -193,8 +196,11 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("reading config: %w", err)
 	}
 
-	// Expand environment variables in config
-	expanded := os.ExpandEnv(string(data))
+	var envData []byte
+	if path == DefaultConfigPath {
+		envData, _ = os.ReadFile(DefaultEnvPath)
+	}
+	expanded := expandConfigEnv(string(data), envData)
 
 	cfg := DefaultConfig()
 	if err := yaml.Unmarshal([]byte(expanded), cfg); err != nil {
@@ -206,6 +212,35 @@ func Load(path string) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func expandConfigEnv(input string, envData []byte) string {
+	fileEnv := make(map[string]string)
+	for _, line := range strings.Split(string(envData), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		line = strings.TrimPrefix(line, "export ")
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if len(value) >= 2 && ((value[0] == '"' && value[len(value)-1] == '"') ||
+			(value[0] == '\'' && value[len(value)-1] == '\'')) {
+			value = value[1 : len(value)-1]
+		}
+		fileEnv[key] = value
+	}
+
+	return os.Expand(input, func(key string) string {
+		if value, ok := os.LookupEnv(key); ok {
+			return value
+		}
+		return fileEnv[key]
+	})
 }
 
 // DefaultConfig returns sane defaults
@@ -243,7 +278,7 @@ func DefaultConfig() *Config {
 			LearningDuration: "7d",
 		},
 		Docker: DockerConfig{
-			Enabled:      true,
+			Enabled:      false,
 			PollInterval: "10s",
 			AlertOnStop:  false,
 		},
@@ -262,7 +297,7 @@ func DefaultConfig() *Config {
 		},
 		SecurityTools: SecurityToolsConfig{
 			Enabled:      false,
-			ClamAVLog:    "/var/log/clamav/clamav.log",
+			ClamAVLog:    "/var/log/piguard/clamav-scan.log",
 			RKHunterLog:  "/var/log/rkhunter.log",
 			PollInterval: "30s",
 		},

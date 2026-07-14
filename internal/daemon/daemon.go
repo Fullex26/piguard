@@ -86,7 +86,7 @@ func New(cfg *config.Config) (*Daemon, error) {
 	d.watchers = append(d.watchers, autoUpdateW)
 
 	// Telegram interactive bot (two-way commands)
-	if cfg.Notifications.Telegram.Enabled {
+	if cfg.Notifications.Telegram.Enabled && cfg.Notifications.Telegram.Interactive {
 		tbot := watchers.NewTelegramBotWatcher(cfg, bus, db)
 		tbot.BackupWatcher = backupW // nil-safe; commands check for nil
 		tbot.AutoUpdateWatcher = autoUpdateW
@@ -99,7 +99,7 @@ func New(cfg *config.Config) (*Daemon, error) {
 		d.watchers = append(d.watchers, watchers.NewDockerWatcher(cfg, bus))
 	}
 	if cfg.Network.Enabled {
-		d.watchers = append(d.watchers, watchers.NewNetworkScanWatcher(cfg, bus))
+		d.watchers = append(d.watchers, watchers.NewNetworkScanWatcher(cfg, bus).WithStateStore(db))
 	}
 	if cfg.Connectivity.Enabled {
 		d.watchers = append(d.watchers, watchers.NewConnectivityWatcher(cfg, bus))
@@ -272,8 +272,9 @@ func (d *Daemon) runDailySummary(ctx context.Context) {
 			hostname, _ := os.Hostname()
 			health := watchers.GetSystemHealth(d.cfg)
 			lastAlert, _ := d.store.GetLastAlertTime()
+			eventCount, _ := d.store.GetEventCount(24)
 
-			msg := notifiers.FormatDailySummary(hostname, health, lastAlert)
+			msg := notifiers.FormatDailySummary(hostname, health, lastAlert, eventCount)
 			for _, n := range d.notifiers {
 				slog.Info("sending notification", "notifier", n.Name(), "type", "daily_summary")
 				if err := n.SendRaw(msg); err != nil {

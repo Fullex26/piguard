@@ -2,12 +2,15 @@
 
 ## Overview
 
-PiGuard includes an interactive Telegram bot that lets you monitor and manage your Pi remotely through chat commands.
+PiGuard includes an optional interactive Telegram bot for read-only status and diagnostic commands.
+
+Outbound-only alerts are the secure default. Interactive mode must be enabled explicitly,
+and remote package, reboot, Docker mutation, cleanup, and backup actions remain disabled.
 
 - Requires `notifications.telegram.enabled: true` and `notifications.telegram.interactive: true` in your config
 - The Telegram bot is implemented as a watcher (`TelegramBotWatcher`), not a notifier — it runs in its own goroutine and publishes events to the bus like any other watcher
 - Commands are slash-prefixed and case-insensitive
-- Destructive commands require the `CONFIRM` keyword or inline keyboard confirmation before execution
+- Commands that mutate the host, containers, update schedule, or backups are disabled
 - The bot long-polls the Telegram Bot API for incoming messages
 
 ## Command Reference
@@ -37,12 +40,7 @@ PiGuard includes an interactive Telegram bot that lets you monitor and manage yo
 | Command | Description |
 |---|---|
 | `/docker` | Container status overview |
-| `/docker stop <name>` | Stop a running container |
-| `/docker restart <name>` | Restart a container |
-| `/docker fix <name>` | Restart an unhealthy or exited container |
 | `/docker logs <name>` | Show last 20 log lines |
-| `/docker remove <name> CONFIRM` | Force-remove a container (destructive) |
-| `/docker prune CONFIRM` | Remove all stopped containers (destructive) |
 
 `/containers` is an alias for `/docker`.
 
@@ -57,17 +55,14 @@ PiGuard includes an interactive Telegram bot that lets you monitor and manage yo
 | Command | Description |
 |---|---|
 | `/storage` | Disk usage + Docker space report |
-| `/storage images CONFIRM` | Prune unused Docker images |
-| `/storage volumes CONFIRM` | Prune unused Docker volumes |
-| `/storage apt CONFIRM` | Clean apt package cache |
-| `/storage all CONFIRM` | Run all pruning operations |
+Storage cleanup subcommands are disabled. Perform maintenance through an authenticated local or SSH session.
 
 ### Updates
 
 | Command | Aliases | Description |
 |---|---|---|
 | `/updates` | `/upgrades` | Check available package upgrades |
-| `/update CONFIRM` | | Run apt upgrade immediately |
+On-demand package upgrades and Telegram changes to the automatic update schedule are disabled.
 
 ### Diagnostics
 
@@ -82,12 +77,6 @@ PiGuard includes an interactive Telegram bot that lets you monitor and manage yo
 |---|---|
 | `/report` | On-demand weekly trend report (events this week vs last week) |
 
-### Danger Zone
-
-| Command | Description |
-|---|---|
-| `/reboot CONFIRM` | Reboot the Pi |
-
 ### Help
 
 | Command | Description |
@@ -95,17 +84,12 @@ PiGuard includes an interactive Telegram bot that lets you monitor and manage yo
 | `/start` | Welcome message |
 | `/help` | Full command list |
 
-## Confirmation Behavior
+## Mutation Policy
 
-Destructive commands require the `CONFIRM` keyword appended to the command text. These include:
-
-- `/docker remove <name> CONFIRM`
-- `/docker prune CONFIRM`
-- `/storage images CONFIRM`, `/storage volumes CONFIRM`, `/storage apt CONFIRM`, `/storage all CONFIRM`
-- `/update CONFIRM`
-- `/reboot CONFIRM`
-
-Without `CONFIRM`, the bot responds with a warning message and instructions on how to proceed. This prevents accidental execution of dangerous operations.
+Telegram cannot reboot the host, install packages, change the automatic update schedule,
+modify or prune containers, clean storage, or start backups. These operations require an
+authenticated local or SSH session. Scheduled updates and backups remain controlled by
+the local configuration.
 
 ## Automatic Messages
 

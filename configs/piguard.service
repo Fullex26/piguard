@@ -1,10 +1,13 @@
 [Unit]
 Description=PiGuard Security Monitor
-After=network.target docker.service
-Wants=docker.service
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
+User=piguard
+Group=piguard
+SupplementaryGroups=adm
 ExecStart=/usr/local/bin/piguard run
 Restart=on-failure
 RestartSec=10
@@ -13,7 +16,28 @@ EnvironmentFile=-/etc/piguard/env
 # Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/var/lib/piguard /var/log/piguard /etc/piguard /tmp /var/cache/apt /var/lib/apt /var/lib/dpkg
+ReadWritePaths=/var/lib/piguard /var/log/piguard
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectProc=invisible
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RemoveIPC=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+MemoryDenyWriteExecute=true
+LockPersonality=true
+UMask=0077
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_NET_ADMIN
+AmbientCapabilities=CAP_DAC_READ_SEARCH CAP_NET_ADMIN
 
 [Install]
 WantedBy=multi-user.target

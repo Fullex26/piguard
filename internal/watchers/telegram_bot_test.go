@@ -3,18 +3,45 @@ package watchers
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/Fullex26/piguard/internal/config"
+	"github.com/Fullex26/piguard/internal/eventbus"
 	"github.com/Fullex26/piguard/internal/logging"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func telegramTestClient() *http.Client {
+	return &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"ok":true,"result":[]}`)),
+			Header:     make(http.Header),
+		}, nil
+	})}
+}
 
 func TestTelegramBotWatcher_Name(t *testing.T) {
 	w := &TelegramBotWatcher{}
 	if got := w.Name(); got != "telegram-bot" {
 		t.Errorf("Name() = %q, want %q", got, "telegram-bot")
+	}
+}
+
+func TestRedactTelegramTransportError(t *testing.T) {
+	token := "12345:secret-token"
+	err := fmt.Errorf("Get https://api.telegram.org/bot%s/getUpdates: timeout", token)
+	got := redactTelegramError(err, token)
+	if strings.Contains(got, token) || !strings.Contains(got, "[REDACTED]") {
+		t.Fatalf("token was not redacted: %q", got)
 	}
 }
 
@@ -45,11 +72,11 @@ func TestFormatKB(t *testing.T) {
 		want string
 	}{
 		{512, "512 kB"},
-		{1024, "1024 kB"},       // not > 1024, so stays as kB
-		{1025, "1 MB"},          // > 1024
+		{1024, "1024 kB"}, // not > 1024, so stays as kB
+		{1025, "1 MB"},    // > 1024
 		{2048, "2 MB"},
-		{1048576, "1024 MB"},    // not > 1048576
-		{1048577, "1.0 GB"},     // > 1048576
+		{1048576, "1024 MB"}, // not > 1048576
+		{1048577, "1.0 GB"},  // > 1048576
 		{2097152, "2.0 GB"},
 	}
 
@@ -85,12 +112,25 @@ func TestTruncate(t *testing.T) {
 }
 
 func TestCmdReboot_RequiresConfirmation(t *testing.T) {
-	w := &TelegramBotWatcher{}
+	w := &TelegramBotWatcher{client: telegramTestClient()}
 	result := w.cmdReboot([]string{"/reboot"})
-	// With inline keyboards, the no-confirm path sends a keyboard via sendReplyWithKeyboard
-	// and returns "" (the keyboard is sent separately via API)
-	if result != "" {
-		t.Errorf("expected empty string (keyboard sent separately), got %q", result)
+	if !containsString(result, "disabled") {
+		t.Errorf("expected disabled message, got %q", result)
+	}
+}
+
+func TestCmdAutoUpdateCannotEnableScheduler(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.AutoUpdate.Enabled = false
+	autoUpdate := NewAutoUpdateWatcher(cfg, eventbus.New())
+	w := &TelegramBotWatcher{AutoUpdateWatcher: autoUpdate}
+
+	result := w.cmdAutoUpdateRouter([]string{"/autoupdate", "on"})
+	if !containsString(result, "disabled") {
+		t.Fatalf("expected disabled response, got %q", result)
+	}
+	if cfg.AutoUpdate.Enabled {
+		t.Fatal("Telegram command enabled the auto-update scheduler")
 	}
 }
 
@@ -100,9 +140,8 @@ func TestCmdDockerRouter_UnknownSubcommand_ReturnsList(t *testing.T) {
 	w := &TelegramBotWatcher{}
 	// Unknown subcommand falls back to list + usage hint (docker unavailable in CI is fine).
 	result := w.cmdDockerRouter([]string{"/docker", "unknown_sub"})
-	// Should contain a usage hint with the subcommand list.
-	if !containsString(result, "stop") || !containsString(result, "restart") {
-		t.Errorf("expected usage hint in result, got: %q", result)
+	if !containsString(result, "mutations are disabled") {
+		t.Errorf("expected read-only hint in result, got: %q", result)
 	}
 }
 
@@ -111,8 +150,8 @@ func TestCmdDockerRouter_UnknownSubcommand_ReturnsList(t *testing.T) {
 func TestCmdDockerStop_NoName(t *testing.T) {
 	w := &TelegramBotWatcher{}
 	result := w.cmdDockerStop([]string{})
-	if !containsString(result, "Usage") {
-		t.Errorf("expected usage message, got: %q", result)
+	if !containsString(result, "disabled") {
+		t.Errorf("expected disabled message, got: %q", result)
 	}
 }
 
@@ -121,8 +160,8 @@ func TestCmdDockerStop_NoName(t *testing.T) {
 func TestCmdDockerRestart_NoName(t *testing.T) {
 	w := &TelegramBotWatcher{}
 	result := w.cmdDockerRestart([]string{})
-	if !containsString(result, "Usage") {
-		t.Errorf("expected usage message, got: %q", result)
+	if !containsString(result, "disabled") {
+		t.Errorf("expected disabled message, got: %q", result)
 	}
 }
 
@@ -131,17 +170,16 @@ func TestCmdDockerRestart_NoName(t *testing.T) {
 func TestCmdDockerRemove_NoName(t *testing.T) {
 	w := &TelegramBotWatcher{}
 	result := w.cmdDockerRemove([]string{})
-	if !containsString(result, "Usage") {
-		t.Errorf("expected usage message, got: %q", result)
+	if !containsString(result, "disabled") {
+		t.Errorf("expected disabled message, got: %q", result)
 	}
 }
 
 func TestCmdDockerRemove_NoConfirm(t *testing.T) {
 	w := &TelegramBotWatcher{}
 	result := w.cmdDockerRemove([]string{"nginx"})
-	// With inline keyboards, no-confirm sends keyboard and returns ""
-	if result != "" {
-		t.Errorf("expected empty string (keyboard sent), got: %q", result)
+	if !containsString(result, "disabled") {
+		t.Errorf("expected disabled message, got: %q", result)
 	}
 }
 
@@ -149,9 +187,8 @@ func TestCmdDockerRemove_WrongKeyword(t *testing.T) {
 	w := &TelegramBotWatcher{}
 	// A word other than CONFIRM should not satisfy the check.
 	result := w.cmdDockerRemove([]string{"nginx", "YES"})
-	// With inline keyboards, wrong keyword sends keyboard and returns ""
-	if result != "" {
-		t.Errorf("expected empty string (keyboard sent), got: %q", result)
+	if !containsString(result, "disabled") {
+		t.Errorf("expected disabled message, got: %q", result)
 	}
 }
 
@@ -160,8 +197,8 @@ func TestCmdDockerRemove_WrongKeyword(t *testing.T) {
 func TestCmdDockerFix_NoName(t *testing.T) {
 	w := &TelegramBotWatcher{}
 	result := w.cmdDockerFix([]string{})
-	if !containsString(result, "Usage") {
-		t.Errorf("expected usage message, got: %q", result)
+	if !containsString(result, "disabled") {
+		t.Errorf("expected disabled message, got: %q", result)
 	}
 }
 
@@ -180,9 +217,8 @@ func TestCmdDockerLogs_NoName(t *testing.T) {
 func TestCmdDockerPrune_NoConfirm(t *testing.T) {
 	w := &TelegramBotWatcher{}
 	result := w.cmdDockerPrune([]string{})
-	// With inline keyboards, no-confirm sends keyboard and returns ""
-	if result != "" {
-		t.Errorf("expected empty string (keyboard sent), got: %q", result)
+	if !containsString(result, "disabled") {
+		t.Errorf("expected disabled message, got: %q", result)
 	}
 }
 
@@ -190,9 +226,8 @@ func TestCmdDockerPrune_WithWrongKeyword(t *testing.T) {
 	w := &TelegramBotWatcher{}
 	// A word other than CONFIRM should not satisfy the check.
 	result := w.cmdDockerPrune([]string{"YES"})
-	// With inline keyboards, wrong keyword sends keyboard and returns ""
-	if result != "" {
-		t.Errorf("expected empty string (keyboard sent), got: %q", result)
+	if !containsString(result, "disabled") {
+		t.Errorf("expected disabled message, got: %q", result)
 	}
 }
 
@@ -260,11 +295,7 @@ func TestGetLocalIP_ReturnsNonEmpty(t *testing.T) {
 // ── Inline keyboard tests ─────────────────────────────────────────────────────
 
 func TestHandleCallback_Dispatch(t *testing.T) {
-	// We can't fully test callbacks without a running Telegram API,
-	// but we verify the routing logic reaches command functions.
-	// The commands that exec docker/apt will fail in CI, but the point
-	// is that handleCallback routes correctly without panic.
-	w := &TelegramBotWatcher{}
+	w := &TelegramBotWatcher{client: telegramTestClient()}
 
 	knownCallbacks := []string{
 		"reboot:confirm",
@@ -286,7 +317,7 @@ func TestHandleCallback_Dispatch(t *testing.T) {
 }
 
 func TestHandleCallback_Unknown(t *testing.T) {
-	w := &TelegramBotWatcher{}
+	w := &TelegramBotWatcher{client: telegramTestClient()}
 	// Should not panic on unknown callback data
 	w.handleCallback("test-id", "unknown:action")
 }
@@ -345,9 +376,8 @@ func containsString(s, sub string) bool {
 // ── Command routing tests ────────────────────────────────────────────────────
 
 func TestHandleCommand_RoutesKnownCommands(t *testing.T) {
-	w := &TelegramBotWatcher{}
+	w := &TelegramBotWatcher{client: telegramTestClient()}
 	// These commands should not panic even without full wiring
-	// Note: /help and /start now send menu via API (will fail silently with no token)
 	commands := []string{"/help", "/start", "/status", "/ports", "/disk", "/temp", "/memory", "/uptime", "/ip"}
 	for _, cmd := range commands {
 		t.Run(cmd, func(t *testing.T) {
@@ -357,9 +387,7 @@ func TestHandleCommand_RoutesKnownCommands(t *testing.T) {
 }
 
 func TestHandleCommand_UnknownCommand(t *testing.T) {
-	w := &TelegramBotWatcher{}
-	// Capture what handleCommand produces — since sendReply will fail (no token),
-	// we just test the flow doesn't panic and routes to "unknown command"
+	w := &TelegramBotWatcher{client: telegramTestClient()}
 	w.handleCommand("/nonexistent")
 }
 
@@ -384,7 +412,7 @@ func TestBuildMainMenu_ContainsAllCategories_Legacy(t *testing.T) {
 		}
 	}
 
-	expected := []string{"m:sys", "m:sec", "m:dock", "m:stor", "m:upd", "m:bak", "m:rep", "m:diag", "m:danger"}
+	expected := []string{"m:sys", "m:sec", "m:dock", "m:stor", "m:upd", "m:bak", "m:rep", "m:diag"}
 	for _, d := range expected {
 		if !dataSet[d] {
 			t.Errorf("main menu missing button with data %q", d)
@@ -437,26 +465,25 @@ func TestCmdPilog_WithFile(t *testing.T) {
 
 func TestSendReply_MakesHTTPCall(t *testing.T) {
 	var received string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.ParseForm()
-		received = r.FormValue("text")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"ok":true}`))
-	}))
-	defer server.Close()
-
-	// Extract the host part and create a watcher that uses it
-	// We can't easily inject the base URL into sendReply without modifying the struct,
-	// but we can test the HTTP mechanics by calling sendReply against our test server.
-	// For now, just verify the format constants are correct.
-	expectedFormat := "https://api.telegram.org/bot%s/sendMessage"
-	actual := fmt.Sprintf(expectedFormat, "test-token")
-	if !strings.HasPrefix(actual, "https://") {
-		t.Errorf("telegram API URL format unexpected: %s", actual)
+	w := &TelegramBotWatcher{
+		token: "test-token",
+		client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if err := req.ParseForm(); err != nil {
+				t.Fatalf("ParseForm: %v", err)
+			}
+			received = req.FormValue("text")
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`{"ok":true}`)),
+				Header:     make(http.Header),
+			}, nil
+		})},
 	}
 
-	_ = received
-	_ = server
+	w.sendReply("test message")
+	if received != "test message" {
+		t.Fatalf("received text = %q, want %q", received, "test message")
+	}
 }
 
 // ── Poll offset tests ────────────────────────────────────────────────────────
@@ -480,7 +507,7 @@ func TestBuildMainMenu_ContainsAllCategories(t *testing.T) {
 	expectedData := map[string]bool{
 		"m:sys": false, "m:sec": false, "m:dock": false,
 		"m:stor": false, "m:upd": false, "m:bak": false,
-		"m:rep": false, "m:diag": false, "m:danger": false,
+		"m:rep": false, "m:diag": false,
 	}
 
 	for _, row := range buttons {
@@ -502,17 +529,14 @@ func TestBuildMainMenu_ButtonLayout(t *testing.T) {
 	w := &TelegramBotWatcher{}
 	_, buttons := w.buildMainMenu()
 
-	// Should have 5 rows: 4 pairs + 1 single
-	if len(buttons) != 5 {
-		t.Fatalf("expected 5 rows, got %d", len(buttons))
+	// Four rows of read-only categories.
+	if len(buttons) != 4 {
+		t.Fatalf("expected 4 rows, got %d", len(buttons))
 	}
 	for i := 0; i < 4; i++ {
 		if len(buttons[i]) != 2 {
 			t.Errorf("row %d: expected 2 buttons, got %d", i, len(buttons[i]))
 		}
-	}
-	if len(buttons[4]) != 1 {
-		t.Errorf("last row: expected 1 button, got %d", len(buttons[4]))
 	}
 }
 
@@ -532,16 +556,11 @@ func TestCallbackDataLength_NewScheme(t *testing.T) {
 	// All new callback strings must be under 64 bytes
 	codes := []string{
 		"m:home", "m:sys", "m:sec", "m:dock", "m:stor", "m:upd",
-		"m:bak", "m:rep", "m:diag", "m:danger",
+		"m:bak", "m:rep", "m:diag",
 		"s:disk", "s:mem", "s:temp", "s:up", "s:ip", "s:svc",
 		"x:ports", "x:fw", "x:events", "x:scan",
-		"d:prune", "d:prune!",
-		"t:img", "t:img!", "t:vol", "t:vol!", "t:apt", "t:apt!", "t:all", "t:all!",
-		"u:run", "u:run!",
-		"b:now", "b:now!",
 		"r:refresh",
 		"g:doctor", "g:pilog",
-		"z:reboot", "z:reboot!",
 	}
 	for _, code := range codes {
 		if len(code) > 64 {
@@ -551,11 +570,11 @@ func TestCallbackDataLength_NewScheme(t *testing.T) {
 }
 
 func TestHandleCallback_MenuNavigation(t *testing.T) {
-	w := &TelegramBotWatcher{}
+	w := &TelegramBotWatcher{client: telegramTestClient()}
 	// All menu navigation callbacks should not panic
 	navCallbacks := []string{
 		"m:home", "m:sys", "m:sec", "m:dock", "m:stor",
-		"m:upd", "m:bak", "m:rep", "m:diag", "m:danger",
+		"m:upd", "m:bak", "m:rep", "m:diag",
 	}
 	for _, data := range navCallbacks {
 		t.Run(data, func(t *testing.T) {
@@ -565,7 +584,7 @@ func TestHandleCallback_MenuNavigation(t *testing.T) {
 }
 
 func TestHandleCallback_DetailViews(t *testing.T) {
-	w := &TelegramBotWatcher{}
+	w := &TelegramBotWatcher{client: telegramTestClient()}
 	// Detail view callbacks should not panic
 	detailCallbacks := []string{
 		"s:disk", "s:mem", "s:temp", "s:up", "s:ip", "s:svc",
@@ -579,41 +598,11 @@ func TestHandleCallback_DetailViews(t *testing.T) {
 	}
 }
 
-func TestHandleCallback_ConfirmationFlow(t *testing.T) {
-	w := &TelegramBotWatcher{}
+func TestHandleCallback_DisabledMutationFlow(t *testing.T) {
+	w := &TelegramBotWatcher{client: telegramTestClient()}
 
-	// z:reboot should show confirmation (not actually reboot) — no panic
-	w.handleCallback("test-id", "z:reboot")
-
-	// d:prune should show confirmation — no panic
 	w.handleCallback("test-id", "d:prune")
-
-	// u:run should show confirmation — no panic
 	w.handleCallback("test-id", "u:run")
-}
-
-func TestBuildConfirmView_Layout(t *testing.T) {
-	text, buttons := buildConfirmView("Test Title", "Test description", "action!", "m:home")
-
-	if !containsString(text, "Test Title") {
-		t.Error("confirm view missing title")
-	}
-	if !containsString(text, "Test description") {
-		t.Error("confirm view missing description")
-	}
-
-	if len(buttons) != 1 {
-		t.Fatalf("expected 1 row, got %d", len(buttons))
-	}
-	if len(buttons[0]) != 2 {
-		t.Fatalf("expected 2 buttons in row, got %d", len(buttons[0]))
-	}
-	if buttons[0][0].Data != "action!" {
-		t.Errorf("confirm button data = %q, want %q", buttons[0][0].Data, "action!")
-	}
-	if buttons[0][1].Data != "m:home" {
-		t.Errorf("cancel button data = %q, want %q", buttons[0][1].Data, "m:home")
-	}
 }
 
 func TestHandleCommand_StartShowsMenu(t *testing.T) {

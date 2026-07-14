@@ -2,6 +2,7 @@ package watchers
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -76,6 +77,79 @@ func TestParseIPNeigh_BlankLines(t *testing.T) {
 	got := parseIPNeigh(input)
 	if len(got) != 0 {
 		t.Errorf("expected 0 devices for blank input, got %d", len(got))
+	}
+}
+
+func TestParseIPNeigh_SkipsDockerInterfaces(t *testing.T) {
+	input := `172.17.0.2 dev docker0 lladdr aa:bb:cc:dd:ee:01 REACHABLE
+172.18.0.2 dev br-1234 lladdr aa:bb:cc:dd:ee:02 STALE
+192.168.1.10 dev eth0 lladdr aa:bb:cc:dd:ee:03 REACHABLE`
+	got := parseIPNeigh(input)
+	if len(got) != 1 || got[0].IP != "192.168.1.10" {
+		t.Fatalf("expected only the LAN device, got %+v", got)
+	}
+}
+
+type memoryNetworkState struct{ value string }
+
+func (s *memoryNetworkState) GetState(string) (string, error) { return s.value, nil }
+func (s *memoryNetworkState) SetState(_ string, value string) error {
+	s.value = value
+	return nil
+}
+
+func TestNetworkScanWatcher_PersistsBaseline(t *testing.T) {
+	state := &memoryNetworkState{}
+	w, _ := newTestNetworkWatcher(false, nil, func() ([]byte, error) {
+		return []byte(`192.168.1.50 dev eth0 lladdr de:ad:be:ef:00:01 REACHABLE`), nil
+	})
+	w.stateStore = state
+	w.check()
+	if !strings.Contains(state.value, "de:ad:be:ef:00:01") {
+		t.Fatalf("saved baseline does not contain device: %s", state.value)
+	}
+
+	w2, received := newTestNetworkWatcher(false, nil, func() ([]byte, error) {
+		return []byte(`192.168.1.50 dev eth0 lladdr de:ad:be:ef:00:01 REACHABLE`), nil
+	})
+	w2.stateStore = state
+	w2.loadBaseline()
+	w2.check()
+	select {
+	case event := <-received:
+		t.Fatalf("persisted device generated a new-device event: %+v", event)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestNetworkScanWatcher_StartupAlertsForDeviceMissingFromSavedBaseline(t *testing.T) {
+	state := &memoryNetworkState{value: `{"aa:bb:cc:dd:ee:ff":{"ip":"192.168.1.1","mac":"aa:bb:cc:dd:ee:ff","interface":"eth0"}}`}
+	w, received := newTestNetworkWatcher(false, nil, nil)
+	w.stateStore = state
+	if !w.loadBaseline() {
+		t.Fatal("expected persisted baseline to load")
+	}
+
+	w.reconcileStartup(parseIPNeigh(`192.168.1.50 dev eth0 lladdr de:ad:be:ef:00:01 REACHABLE`), true)
+
+	select {
+	case event := <-received:
+		if event.Type != models.EventNetworkNewDevice || !strings.Contains(event.Message, "de:ad:be:ef:00:01") {
+			t.Fatalf("unexpected startup event: %+v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for startup new-device event")
+	}
+}
+
+func TestNetworkScanWatcher_FirstStartupLearnsSilently(t *testing.T) {
+	w, received := newTestNetworkWatcher(false, nil, nil)
+	w.reconcileStartup(parseIPNeigh(`192.168.1.50 dev eth0 lladdr de:ad:be:ef:00:01 REACHABLE`), false)
+
+	select {
+	case event := <-received:
+		t.Fatalf("first startup generated an event: %+v", event)
+	case <-time.After(50 * time.Millisecond):
 	}
 }
 
