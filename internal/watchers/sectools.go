@@ -96,27 +96,34 @@ func (w *SecToolsWatcher) scanLog(path string, evType models.EventType, match fu
 		return
 	}
 
-	hostname, _ := os.Hostname()
 	scanner := bufio.NewScanner(f)
-
+	var lines []string
 	for scanner.Scan() {
-		line := scanner.Text()
-		if !match(line) {
-			continue
-		}
+		lines = append(lines, scanner.Text())
+	}
 
-		slog.Info("sectools: match found", "type", evType, "line", line)
-		w.Bus.Publish(models.Event{
-			ID:        fmt.Sprintf("%s-%d", string(evType), time.Now().UnixNano()),
-			Type:      evType,
-			Severity:  models.SeverityCritical,
-			Hostname:  hostname,
-			Timestamp: time.Now(),
-			Message:   line,
-			Details:   fmt.Sprintf("Log file: %s", path),
-			Suggested: suggestedAction(evType),
-			Source:    "sectools",
-		})
+	if evType == models.EventRootkitWarning {
+		for _, finding := range parseRKHunterFindings(lines) {
+			w.publishFinding(path, finding)
+		}
+	} else {
+		for _, line := range lines {
+			if strings.Contains(line, "PIGUARD_SCAN_ERROR:") {
+				w.publishFinding(path, securityFinding{
+					eventType: models.EventSecurityScanFailed,
+					severity:  models.SeverityWarning,
+					message:   strings.TrimSpace(line),
+				})
+				continue
+			}
+			if match(line) {
+				w.publishFinding(path, securityFinding{
+					eventType: evType,
+					severity:  models.SeverityCritical,
+					message:   line,
+				})
+			}
+		}
 	}
 
 	// Store the new offset (position after last complete line).
@@ -124,6 +131,89 @@ func (w *SecToolsWatcher) scanLog(path string, evType models.EventType, match fu
 	if err == nil {
 		w.offsets[path] = pos
 	}
+}
+
+type securityFinding struct {
+	eventType models.EventType
+	severity  models.Severity
+	message   string
+	details   string
+}
+
+func (w *SecToolsWatcher) publishFinding(path string, finding securityFinding) {
+	hostname, _ := os.Hostname()
+	details := fmt.Sprintf("Log file: %s", path)
+	if finding.details != "" {
+		details += "\n" + finding.details
+	}
+	slog.Info("sectools: match found", "type", finding.eventType, "message", finding.message)
+	w.Bus.Publish(models.Event{
+		ID:        fmt.Sprintf("%s-%d", string(finding.eventType), time.Now().UnixNano()),
+		Type:      finding.eventType,
+		Severity:  finding.severity,
+		Hostname:  hostname,
+		Timestamp: time.Now(),
+		Message:   finding.message,
+		Details:   details,
+		Suggested: suggestedAction(finding.eventType),
+		Source:    "sectools",
+	})
+}
+
+func parseRKHunterFindings(lines []string) []securityFinding {
+	var findings []securityFinding
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+		if strings.Contains(line, "PIGUARD_SCAN_ERROR:") {
+			findings = append(findings, securityFinding{
+				eventType: models.EventSecurityScanFailed,
+				severity:  models.SeverityWarning,
+				message:   strings.TrimSpace(line),
+			})
+			continue
+		}
+		if !isRKHunterMatch(line) {
+			continue
+		}
+
+		finding := securityFinding{
+			eventType: models.EventRootkitWarning,
+			severity:  models.SeverityCritical,
+			message:   line,
+		}
+		if strings.Contains(line, "file properties have changed") {
+			finding.severity = models.SeverityWarning
+			var context []string
+			for j := i + 1; j < len(lines) && j <= i+8; j++ {
+				next := strings.TrimSpace(stripRKHunterTimestamp(lines[j]))
+				if next == "" {
+					continue
+				}
+				if strings.HasPrefix(next, "File:") {
+					file := strings.TrimSpace(strings.TrimPrefix(next, "File:"))
+					finding.message = "File properties changed: " + file
+				}
+				if strings.HasPrefix(next, "File:") || strings.HasPrefix(next, "Current hash:") ||
+					strings.HasPrefix(next, "Stored hash") || strings.HasPrefix(next, "Current inode:") ||
+					strings.HasPrefix(next, "Current file modification time:") || strings.HasPrefix(next, "Stored file modification time") {
+					context = append(context, next)
+				}
+			}
+			finding.details = strings.Join(context, "\n")
+		}
+		findings = append(findings, finding)
+	}
+	return findings
+}
+
+func stripRKHunterTimestamp(line string) string {
+	line = strings.TrimSpace(line)
+	if strings.HasPrefix(line, "[") {
+		if end := strings.Index(line, "]"); end >= 0 {
+			return strings.TrimSpace(line[end+1:])
+		}
+	}
+	return line
 }
 
 // isClamAVMatch returns true for genuine ClamAV FOUND lines.
@@ -142,7 +232,9 @@ func suggestedAction(evType models.EventType) string {
 	case models.EventMalwareFound:
 		return "Quarantine or remove the flagged file. Run: sudo clamscan -r --remove /path/to/file"
 	case models.EventRootkitWarning:
-		return "Review rkhunter report: sudo rkhunter --report-warnings-only. Investigate flagged items."
+		return "Review the full report and verify the affected package before updating the baseline: sudo rkhunter --check --skip-keypress --report-warnings-only"
+	case models.EventSecurityScanFailed:
+		return "Inspect the scan service: sudo journalctl -u piguard-security-scan.service"
 	}
 	return ""
 }

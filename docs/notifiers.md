@@ -26,7 +26,7 @@ Every notifier implements the same interface:
 3. Save credentials in the env file:
    ```bash
    # /etc/piguard/env
-   PIGUARD_TELEGRAM_TOKEN=123456:ABC-DEF...
+   PIGUARD_TELEGRAM_TOKEN=<bot-token-from-BotFather>
    PIGUARD_TELEGRAM_CHAT_ID=-1001234567890
    ```
 4. Add the Telegram section to your config:
@@ -36,7 +36,7 @@ Every notifier implements the same interface:
        enabled: true
        bot_token: "${PIGUARD_TELEGRAM_TOKEN}"
        chat_id: "${PIGUARD_TELEGRAM_CHAT_ID}"
-       interactive: true
+       interactive: false
    ```
 5. Verify the connection:
    ```bash
@@ -45,7 +45,7 @@ Every notifier implements the same interface:
 
 ### Interactive Mode
 
-When `interactive: true`, the Telegram bot registers as a watcher (`TelegramBotWatcher`) and responds to slash commands such as `/docker`, `/storage`, `/services`, `/doctor`, `/updates`, `/update`, `/report`, and `/pilog`. Destructive actions require inline-keyboard confirmation. See [telegram-bot.md](telegram-bot.md) for the full command reference.
+When `interactive: true`, the Telegram bot registers as a watcher (`TelegramBotWatcher`) and responds to read-only status and diagnostic commands such as `/docker`, `/storage`, `/services`, `/doctor`, `/updates`, `/report`, and `/pilog`. Host, package, Docker, storage, update-schedule, and backup mutations are disabled. See [telegram-bot.md](telegram-bot.md) for the full command reference.
 
 ### Alert Format
 
@@ -215,7 +215,7 @@ notifications:
     enabled: true
     bot_token: "${PIGUARD_TELEGRAM_TOKEN}"
     chat_id: "${PIGUARD_TELEGRAM_CHAT_ID}"
-    interactive: true
+    interactive: false
   ntfy:
     enabled: true
     topic: "piguard-mypi"

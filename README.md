@@ -41,18 +41,18 @@ sudo systemctl enable --now piguard
 - **Firewall**: Watches iptables chains for policy changes or missing rules
 - **System**: Disk, memory, CPU temperature (Pi thermal sensor)
 - **File integrity**: Detects changes to critical system files (`/etc/passwd`, SSH config, sudoers, crontab, etc.)
-- **Docker containers**: Alerts on container start, crash (non-zero exit), graceful stop (opt-in), health transitions, and **Watchtower image updates** (detects same-name container restarting with a new image digest); interactive Telegram controls (stop/restart/fix/logs/remove/prune)
-- **Storage management**: Telegram `/storage` command — disk usage report, Docker image/volume pruning, apt cache cleanup, all with confirmation guards
+- **Docker containers**: Alerts on container start, crash (non-zero exit), graceful stop (opt-in), health transitions, and **Watchtower image updates** (detects same-name container restarting with a new image digest); optional read-only Telegram status and logs
+- **Storage visibility**: Telegram `/storage` reports disk and Docker usage; remote cleanup actions are disabled
 - **Network devices**: Detects new/unknown devices on the local network via ARP neighbour table (`ip neigh show`)
 - **Security tools**: Tails ClamAV and rkhunter logs — fires Critical alerts on malware detections or rootkit warnings
 - **Connectivity**: Polls configurable TCP probe hosts (default: `8.8.8.8:53`, `1.1.1.1:53`) every 30 s; fires Critical alert on outage and Info alert on recovery with outage duration
 - **Services dashboard**: Telegram `/services` shows running systemd services plus Docker containers with host port bindings as local access URLs
-- **Auto-update**: Scheduled `apt upgrade` with configurable day/time; Telegram `/updates` to check and `/update CONFIRM` to trigger on-demand; alerts on success/failure and reboot-required; optional `auto_reboot` sends a warning then reboots automatically after a configurable delay
-- **Backup**: Scheduled rsync backups to local USB or remote host; date-stamped directories with incremental `--link-dest`; configurable retention; pre-flight checks (rsync installed, destination reachable); Telegram `/backup` for status and `/backup now` for on-demand runs
+- **Auto-update**: Scheduled `apt upgrade` with locally configurable day/time; Telegram `/updates` is read-only; alerts on success/failure and reboot-required; optional `auto_reboot` sends a warning then reboots automatically after a configurable delay
+- **Backup**: Scheduled rsync backups to local USB or remote host; date-stamped directories with incremental `--link-dest`; configurable retention; pre-flight checks (rsync installed, destination reachable); Telegram `/backup` reports status only
 - **Auth log monitoring**: Watches `/var/log/auth.log` for SSH brute-force attempts (Critical alert on threshold), failed sudo authentication (Warning), and successful SSH logins (opt-in Info)
 - **Quiet hours**: Non-critical notifications suppressed during configurable window (default 23:00–07:00); Critical events always get through
 - **Weekly trend reports**: Automatic weekly summary with event breakdown and trend arrows; on-demand via Telegram `/report`
-- **Inline keyboard buttons**: Telegram destructive commands (reboot, update, docker prune, etc.) show tappable confirmation buttons
+- **Read-only Telegram controls**: Interactive mode is opt-in and cannot reboot, update, prune, modify containers, or start backups
 - **File logging**: Persistent log file with configurable level (debug/info/warn/error) and automatic size-based rotation; remote log tailing via Telegram `/pilog`
 - **CLI messaging**: `piguard send "message"` sends arbitrary messages to Telegram from the command line or scripts (supports stdin piping)
 - **Daily summary**: 8am digest with full system status
@@ -70,7 +70,7 @@ After installing, re-run `sudo piguard setup` to enable log monitoring, or set `
 
 > **Tip:** Schedule regular scans with cron so PiGuard reports findings in real-time as they happen:
 > ```
-> 0 3 * * * root /usr/bin/clamscan -r /home --quiet --log=/var/log/clamav/clamav.log
+> 0 3 * * * root /usr/bin/clamscan -r /home --quiet --log=/var/log/piguard/clamav-scan.log
 > 0 4 * * * root /usr/bin/rkhunter --check --skip-keypress --report-warnings-only
 > ```
 
@@ -168,7 +168,7 @@ Full documentation is available in the [`docs/`](docs/README.md) directory:
 - [x] **v0.8** — Observability & testing: `piguard send` CLI for Telegram messaging, persistent file logging with configurable level and rotation, Telegram `/pilog` for remote log tailing, `--verbose` flag, comprehensive test suite expansion (~74 new tests with injectable function refactoring)
 - [x] **v0.9** — Auto-reboot after upgrade: configurable `auto_reboot` and `reboot_delay_minutes` in `auto_update` config; sends Warning notification then reboots after delay
 - [x] **v0.10** — Backup system: scheduled rsync to USB drive or remote, Telegram `/backup now` and `/backup status` commands; button-driven inline keyboard menu; auto-update settings via Telegram; race condition fixes and systemd hardening
-- [ ] **v0.11** — Service management: Telegram `/service start|stop|restart|status <name>` for systemctl control
+- [x] **v0.11** — Dashboard security hardening, persistent network-device baselines, scan-failure reporting, and read-only Telegram controls
 - [ ] **v0.12** — Embedded web dashboard
 - [ ] **v0.13** — Smart baselines with learning mode
 - [ ] **v0.14** — Plugin system, multi-host support, Prometheus metrics

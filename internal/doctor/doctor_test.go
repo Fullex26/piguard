@@ -16,7 +16,7 @@ type mockDB struct {
 	err       error
 }
 
-func (m *mockDB) GetEventCount(_ int) (int, error) { return m.count, m.err }
+func (m *mockDB) GetEventCount(_ int) (int, error)  { return m.count, m.err }
 func (m *mockDB) GetLastAlertTime() (string, error) { return m.lastAlert, m.err }
 func (m *mockDB) Close() error                      { return nil }
 
@@ -110,7 +110,10 @@ func TestCheckNotifiers_Multiple(t *testing.T) {
 // ── checkDaemon ───────────────────────────────────────────────────────────────
 
 func TestCheckDaemon_Active(t *testing.T) {
-	r := stubRunner(minimalCfg(), map[string]struct{ out string; code int }{
+	r := stubRunner(minimalCfg(), map[string]struct {
+		out  string
+		code int
+	}{
 		"systemctl": {"active", 0},
 	}, &mockDB{})
 	res := r.checkDaemon()
@@ -120,7 +123,10 @@ func TestCheckDaemon_Active(t *testing.T) {
 }
 
 func TestCheckDaemon_Inactive(t *testing.T) {
-	r := stubRunner(minimalCfg(), map[string]struct{ out string; code int }{
+	r := stubRunner(minimalCfg(), map[string]struct {
+		out  string
+		code int
+	}{
 		"systemctl": {"inactive", 3},
 	}, &mockDB{})
 	res := r.checkDaemon()
@@ -133,7 +139,10 @@ func TestCheckDaemon_Inactive(t *testing.T) {
 }
 
 func TestCheckDaemon_NoSystemd(t *testing.T) {
-	r := stubRunner(minimalCfg(), map[string]struct{ out string; code int }{}, &mockDB{})
+	r := stubRunner(minimalCfg(), map[string]struct {
+		out  string
+		code int
+	}{}, &mockDB{})
 	// execFn returns -1 for unknown commands (systemctl not found)
 	res := r.checkDaemon()
 	if res.Status != StatusSkip {
@@ -165,7 +174,10 @@ func TestCheckEventStore_DBFail(t *testing.T) {
 // ── checkSS ───────────────────────────────────────────────────────────────────
 
 func TestCheckSS_Found(t *testing.T) {
-	r := stubRunner(minimalCfg(), map[string]struct{ out string; code int }{
+	r := stubRunner(minimalCfg(), map[string]struct {
+		out  string
+		code int
+	}{
 		"ss": {"ss, iproute2-5.10.0", 0},
 	}, &mockDB{})
 	if res := r.checkSS(); res.Status != StatusOK {
@@ -174,7 +186,10 @@ func TestCheckSS_Found(t *testing.T) {
 }
 
 func TestCheckSS_NotFound(t *testing.T) {
-	r := stubRunner(minimalCfg(), map[string]struct{ out string; code int }{}, &mockDB{})
+	r := stubRunner(minimalCfg(), map[string]struct {
+		out  string
+		code int
+	}{}, &mockDB{})
 	res := r.checkSS()
 	if res.Status != StatusFail {
 		t.Errorf("want Fail, got %v", res.Status)
@@ -187,7 +202,10 @@ func TestCheckSS_NotFound(t *testing.T) {
 // ── checkIPTables ─────────────────────────────────────────────────────────────
 
 func TestCheckIPTables_OK(t *testing.T) {
-	r := stubRunner(minimalCfg(), map[string]struct{ out string; code int }{
+	r := stubRunner(minimalCfg(), map[string]struct {
+		out  string
+		code int
+	}{
 		"iptables": {"Chain INPUT (policy DROP)", 0},
 	}, &mockDB{})
 	if res := r.checkIPTables(); res.Status != StatusOK {
@@ -196,7 +214,10 @@ func TestCheckIPTables_OK(t *testing.T) {
 }
 
 func TestCheckIPTables_PermissionDenied(t *testing.T) {
-	r := stubRunner(minimalCfg(), map[string]struct{ out string; code int }{
+	r := stubRunner(minimalCfg(), map[string]struct {
+		out  string
+		code int
+	}{
 		"iptables": {"Permission denied (you must be root)", 4},
 	}, &mockDB{})
 	res := r.checkIPTables()
@@ -209,7 +230,10 @@ func TestCheckIPTables_PermissionDenied(t *testing.T) {
 }
 
 func TestCheckIPTables_NotFound(t *testing.T) {
-	r := stubRunner(minimalCfg(), map[string]struct{ out string; code int }{}, &mockDB{})
+	r := stubRunner(minimalCfg(), map[string]struct {
+		out  string
+		code int
+	}{}, &mockDB{})
 	if res := r.checkIPTables(); res.Status != StatusFail {
 		t.Errorf("want Fail, got %v", res.Status)
 	}
@@ -218,7 +242,10 @@ func TestCheckIPTables_NotFound(t *testing.T) {
 // ── checkDocker ───────────────────────────────────────────────────────────────
 
 func TestCheckDocker_OK(t *testing.T) {
-	r := stubRunner(minimalCfg(), map[string]struct{ out string; code int }{
+	r := stubRunner(minimalCfg(), map[string]struct {
+		out  string
+		code int
+	}{
 		"docker": {"5", 0},
 	}, &mockDB{})
 	res := r.checkDocker()
@@ -231,7 +258,10 @@ func TestCheckDocker_OK(t *testing.T) {
 }
 
 func TestCheckDocker_PermissionDenied(t *testing.T) {
-	r := stubRunner(minimalCfg(), map[string]struct{ out string; code int }{
+	r := stubRunner(minimalCfg(), map[string]struct {
+		out  string
+		code int
+	}{
 		"docker": {"permission denied while trying to connect", 1},
 	}, &mockDB{})
 	res := r.checkDocker()
@@ -241,7 +271,10 @@ func TestCheckDocker_PermissionDenied(t *testing.T) {
 }
 
 func TestCheckDocker_NotFound(t *testing.T) {
-	r := stubRunner(minimalCfg(), map[string]struct{ out string; code int }{}, &mockDB{})
+	r := stubRunner(minimalCfg(), map[string]struct {
+		out  string
+		code int
+	}{}, &mockDB{})
 	if res := r.checkDocker(); res.Status != StatusFail {
 		t.Errorf("want Fail, got %v", res.Status)
 	}
@@ -250,7 +283,10 @@ func TestCheckDocker_NotFound(t *testing.T) {
 // ── checkRKHunter ─────────────────────────────────────────────────────────────
 
 func TestCheckRKHunter_NotInstalled(t *testing.T) {
-	r := stubRunner(minimalCfg(), map[string]struct{ out string; code int }{}, &mockDB{})
+	r := stubRunner(minimalCfg(), map[string]struct {
+		out  string
+		code int
+	}{}, &mockDB{})
 	res := r.checkRKHunter()
 	if res.Status != StatusWarn {
 		t.Errorf("want Warn, got %v", res.Status)
@@ -258,7 +294,10 @@ func TestCheckRKHunter_NotInstalled(t *testing.T) {
 }
 
 func TestCheckRKHunter_InstalledLogMissing(t *testing.T) {
-	r := stubRunner(minimalCfg(), map[string]struct{ out string; code int }{
+	r := stubRunner(minimalCfg(), map[string]struct {
+		out  string
+		code int
+	}{
 		"rkhunter": {"rkhunter 1.4.6", 0},
 	}, &mockDB{})
 	// existsFn returns false (default in stubRunner) → log doesn't exist → OK
@@ -269,7 +308,10 @@ func TestCheckRKHunter_InstalledLogMissing(t *testing.T) {
 }
 
 func TestCheckRKHunter_LogNotWritable(t *testing.T) {
-	r := stubRunner(minimalCfg(), map[string]struct{ out string; code int }{
+	r := stubRunner(minimalCfg(), map[string]struct {
+		out  string
+		code int
+	}{
 		"rkhunter": {"rkhunter 1.4.6", 0},
 	}, &mockDB{})
 	r.existsFn = func(_ string) bool { return true }    // log exists
@@ -286,14 +328,20 @@ func TestCheckRKHunter_LogNotWritable(t *testing.T) {
 // ── checkClamAV ───────────────────────────────────────────────────────────────
 
 func TestCheckClamAV_NotInstalled(t *testing.T) {
-	r := stubRunner(minimalCfg(), map[string]struct{ out string; code int }{}, &mockDB{})
+	r := stubRunner(minimalCfg(), map[string]struct {
+		out  string
+		code int
+	}{}, &mockDB{})
 	if res := r.checkClamAV(); res.Status != StatusWarn {
 		t.Errorf("want Warn, got %v", res.Status)
 	}
 }
 
 func TestCheckClamAV_Installed(t *testing.T) {
-	r := stubRunner(minimalCfg(), map[string]struct{ out string; code int }{
+	r := stubRunner(minimalCfg(), map[string]struct {
+		out  string
+		code int
+	}{
 		"clamscan": {"ClamAV 1.0.0", 0},
 	}, &mockDB{})
 	if res := r.checkClamAV(); res.Status != StatusOK {
@@ -313,7 +361,10 @@ func TestRun_DisabledWatchersAreSkipped(t *testing.T) {
 		SecurityTools: config.SecurityToolsConfig{Enabled: false},
 		Network:       config.NetworkConfig{Enabled: false},
 	}
-	r := stubRunner(cfg, map[string]struct{ out string; code int }{
+	r := stubRunner(cfg, map[string]struct {
+		out  string
+		code int
+	}{
 		"systemctl": {"active", 0},
 		"ss":        {"iproute2", 0},
 	}, &mockDB{count: 1})
@@ -369,7 +420,7 @@ func TestRenderCLI_WithFailure(t *testing.T) {
 
 func TestRenderCLI_WithWarn(t *testing.T) {
 	results := []CheckResult{
-		{Category: "Dependencies", Name: "rkhunter", Status: StatusWarn, Message: "Log not writable", Fix: "chmod 666"},
+		{Category: "Dependencies", Name: "rkhunter", Status: StatusWarn, Message: "Log not writable", Fix: "chmod 640"},
 	}
 	out := RenderCLI(results)
 	if !strings.Contains(out, "1 checks need attention") {
@@ -393,13 +444,13 @@ func TestRenderTelegram_AllPassed(t *testing.T) {
 func TestRenderTelegram_WithFix(t *testing.T) {
 	results := []CheckResult{
 		{Category: "Dependencies", Name: "rkhunter", Status: StatusWarn,
-			Message: "Log not writable", Fix: "sudo chmod 666 /var/log/rkhunter.log"},
+			Message: "Log not writable", Fix: "sudo chmod 640 /var/log/rkhunter.log"},
 	}
 	out := RenderTelegram(results)
 	if !strings.Contains(out, "<code>") {
 		t.Error("fix should be wrapped in <code> tags")
 	}
-	if !strings.Contains(out, "chmod 666") {
+	if !strings.Contains(out, "chmod 640") {
 		t.Error("fix command should appear in output")
 	}
 }

@@ -91,6 +91,30 @@ alerts:
 	}
 }
 
+func TestExpandConfigEnv_UsesEnvironmentFileFallback(t *testing.T) {
+	old, existed := os.LookupEnv("PIGUARD_FILE_TOKEN")
+	t.Cleanup(func() {
+		if existed {
+			_ = os.Setenv("PIGUARD_FILE_TOKEN", old)
+		} else {
+			_ = os.Unsetenv("PIGUARD_FILE_TOKEN")
+		}
+	})
+	os.Unsetenv("PIGUARD_FILE_TOKEN")
+	got := expandConfigEnv("token=${PIGUARD_FILE_TOKEN}", []byte("PIGUARD_FILE_TOKEN='from-file'\n"))
+	if got != "token=from-file" {
+		t.Fatalf("expanded config = %q", got)
+	}
+}
+
+func TestExpandConfigEnv_ProcessEnvironmentWins(t *testing.T) {
+	t.Setenv("PIGUARD_FILE_TOKEN", "from-process")
+	got := expandConfigEnv("token=${PIGUARD_FILE_TOKEN}", []byte("PIGUARD_FILE_TOKEN=from-file\n"))
+	if got != "token=from-process" {
+		t.Fatalf("expanded config = %q", got)
+	}
+}
+
 func TestLoad_FileNotFound(t *testing.T) {
 	_, err := Load("/nonexistent/path/config.yaml")
 	if err == nil {

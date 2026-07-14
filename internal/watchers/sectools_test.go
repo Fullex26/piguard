@@ -61,6 +61,35 @@ func TestIsRKHunterMatch(t *testing.T) {
 	}
 }
 
+func TestParseRKHunterFindings_IncludesChangedFileContext(t *testing.T) {
+	lines := []string{
+		"[06:25:22] Warning: The file properties have changed:",
+		"[06:25:22]          File: /usr/bin/curl",
+		"[06:25:22]          Current hash: current",
+		"[06:25:22]          Stored hash : stored",
+	}
+	got := parseRKHunterFindings(lines)
+	if len(got) != 1 {
+		t.Fatalf("got %d findings, want 1", len(got))
+	}
+	if got[0].message != "File properties changed: /usr/bin/curl" {
+		t.Errorf("message = %q", got[0].message)
+	}
+	if got[0].severity != models.SeverityWarning {
+		t.Errorf("severity = %v, want warning", got[0].severity)
+	}
+	if !contains(got[0].details, "Current hash: current") {
+		t.Errorf("details missing hash context: %q", got[0].details)
+	}
+}
+
+func TestParseRKHunterFindings_ScanFailure(t *testing.T) {
+	got := parseRKHunterFindings([]string{"PIGUARD_SCAN_ERROR: rkhunter failed"})
+	if len(got) != 1 || got[0].eventType != models.EventSecurityScanFailed {
+		t.Fatalf("unexpected findings: %+v", got)
+	}
+}
+
 func TestSuggestedAction(t *testing.T) {
 	tests := []struct {
 		evType models.EventType

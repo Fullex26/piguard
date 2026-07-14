@@ -6,6 +6,7 @@ INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/piguard"
 STATE_DIR="/var/lib/piguard"
 LOG_DIR="/var/log/piguard"
+SERVICE_USER="piguard"
 
 # Colors
 RED='\033[0;31m'
@@ -83,9 +84,13 @@ echo -e "  ${GREEN}Checksum verified ✓${NC}"
 mv "$TMPBIN" "$INSTALL_DIR/piguard"
 chmod 755 "$INSTALL_DIR/piguard"
 
-# Create directories
-mkdir -p "$CONFIG_DIR" "$STATE_DIR" "$LOG_DIR"
-chmod 750 "$CONFIG_DIR" "$STATE_DIR"
+# Create the unprivileged service identity and protected directories.
+if ! getent passwd "$SERVICE_USER" >/dev/null; then
+    useradd --system --user-group --home-dir "$STATE_DIR" --shell /usr/sbin/nologin "$SERVICE_USER"
+fi
+usermod -a -G adm "$SERVICE_USER"
+install -d -o root -g "$SERVICE_USER" -m 0750 "$CONFIG_DIR"
+install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0750 "$STATE_DIR" "$LOG_DIR"
 
 # Install default config if not exists
 FRESH_INSTALL=false
@@ -96,6 +101,12 @@ if [[ ! -f "$CONFIG_DIR/config.yaml" ]]; then
     FRESH_INSTALL=true
 else
     echo -e "  Config: ${YELLOW}$CONFIG_DIR/config.yaml${NC} (existing, kept)"
+fi
+chown root:"$SERVICE_USER" "$CONFIG_DIR/config.yaml"
+chmod 0640 "$CONFIG_DIR/config.yaml"
+if [[ -f "$CONFIG_DIR/env" ]]; then
+    chown root:root "$CONFIG_DIR/env"
+    chmod 0600 "$CONFIG_DIR/env"
 fi
 
 # Install systemd service
