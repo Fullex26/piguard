@@ -16,7 +16,8 @@ sudo systemctl enable --now piguard-security-scan.timer
 
 ## Tailscale-bound services
 
-Services that bind directly to a Tailscale address must start after `tailscaled.service`.
+Services that bind directly to a Tailscale address must start after
+`tailscale-online.target`, which waits until the interface and address are ready.
 Install the matching drop-in only on hosts that use this layout:
 
 ```sh
